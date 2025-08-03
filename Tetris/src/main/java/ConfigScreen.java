@@ -96,13 +96,28 @@ public class ConfigScreen extends Application {
         HBox extendRow = new HBox(10, extendModeCheckBox, extendValue);
         extendRow.setAlignment(Pos.TOP_LEFT);
 
+        // Back Button
+        Button backButton = new Button("Back");
+        backButton.setOnAction(e -> {
+            MainMenu mainMenu = new MainMenu();
+            try {
+                mainMenu.start(stage);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
+        HBox backBox = new HBox(backButton);
+        backBox.setAlignment(Pos.CENTER);
+        backBox.setPadding(new Insets(20, 0, 0, 0));
+
         // Layout
         VBox layout = new VBox(10,
                 titleBox,
                 fieldWidthLabel, fieldWidthRow,
                 fieldHeightLabel, fieldHeightRow,
                 gameLevelLabel, gameLevelRow,
-                musicRow, soundRow, aiRow, extendRow
+                musicRow, soundRow, aiRow, extendRow,
+                backBox
         );
         layout.setPadding(new Insets(20));
         layout.setAlignment(Pos.CENTER_LEFT);

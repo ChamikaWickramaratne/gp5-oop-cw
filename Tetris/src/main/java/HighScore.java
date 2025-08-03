@@ -1,3 +1,4 @@
+import com.sun.tools.javac.Main;
 import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -75,14 +76,14 @@ public class HighScore extends Application {
         backBox.setPadding(new Insets(10, 0, 0, 0));
 
         // Back Button Functionality
-//        backButton.setOnAction(e -> {
-//            Main mainView = new Main();
-//            try {
-//                mainView.start(stage);  // Navigate back to Main menu
-//            } catch (Exception ex) {
-//                ex.printStackTrace();
-//            }
-//        });
+        backButton.setOnAction(e -> {
+            MainMenu mainView = new MainMenu();
+            try {
+                mainView.start(stage);  // Navigate back to Main menu
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
 
 
         // Author
