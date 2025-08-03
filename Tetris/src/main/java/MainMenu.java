@@ -25,21 +25,26 @@ public class MainMenu extends Application {
         }
 
         // Button actions
-/*        highScoreButton.setOnAction(e -> {
+        highScoreButton.setOnAction(e -> {
             HighScore highScoreView = new HighScore();
             try {
                 highScoreView.start(primaryStage);
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
-        });*/
+        });
 
         playButton.setOnAction(e -> {
             System.out.println("Play button clicked (feature to be implemented)");
         });
 
         configButton.setOnAction(e -> {
-            System.out.println("Configurations button clicked (feature to be implemented)");
+            ConfigScreen configView = new ConfigScreen();
+            try {
+                configView.start(primaryStage);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         });
 
         exitButton.setOnAction(e -> {
