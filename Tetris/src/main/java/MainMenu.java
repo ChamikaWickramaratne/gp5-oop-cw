@@ -34,8 +34,14 @@ public class MainMenu extends Application {
             }
         });
 
+        // Gameplay actions
         playButton.setOnAction(e -> {
-            System.out.println("Play button clicked (feature to be implemented)");
+            Gameplay gameplayView = new Gameplay();
+            try {
+                gameplayView.start(primaryStage);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         });
 
         configButton.setOnAction(e -> {
