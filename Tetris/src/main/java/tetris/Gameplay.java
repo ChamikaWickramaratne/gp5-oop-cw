@@ -242,7 +242,6 @@ public class Gameplay extends Application {
         int shapeWidth = (maxX - minX + 1);
         int startCol = Math.max(0, (width - shapeWidth) / 2 - minX);
 
-        // NEW: choose random color for this piece
         Color color = colourOptions[rng.nextInt(colourOptions.length)];
         currentPiece = new StandardPiece(type, 0, startCol, base, color);
 
@@ -266,15 +265,26 @@ public class Gameplay extends Application {
         spawnNewPiece();
     }
 
-    private void tryMoveLeft()  { currentPiece.tryMove(grid, 0, -1); }
-    private void tryMoveRight() { currentPiece.tryMove(grid, 0, +1); }
-    private void tryRotate()    { currentPiece.tryRotateCW(grid); }
+    private void tryMoveLeft()  {
+        currentPiece.tryMove(grid, 0, -1);
+    }
 
-    private void boost(boolean pressed) { dropSpeed = pressed ? 100_000_000L : 1_000_000_000L; }
+    private void tryMoveRight() {
+        currentPiece.tryMove(grid, 0, +1);
+    }
+
+    private void tryRotate() {
+        currentPiece.tryRotateCW(grid);
+    }
+
+    private void boost(boolean pressed) {
+        dropSpeed = pressed ? 100_000_000L : 1_000_000_000L;
+    }
 
     private void pauseGame() {
         paused = !paused;
-        if (!paused) lastDropTime = 0;
+        if (!paused)
+            lastDropTime = 0;
     }
 
     //drawing the board each time
@@ -285,7 +295,8 @@ public class Gameplay extends Application {
         //border color
         gc.setStroke(Color.LIGHTGRAY);
         for (int y = 0; y < H; y++) {
-            for (int x = 0; x < W; x++) gc.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+            for (int x = 0; x < W; x++)
+                gc.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
         }
 
         for (int y = 0; y < H; y++) {
@@ -309,7 +320,7 @@ public class Gameplay extends Application {
             gc.strokeRect(px, py, cellSize, cellSize);
         }
 
-        //gameover/paused overlay
+        //game over/paused overlay
         if (paused || gameOver) {
             double w = W * cellSize, h = H * cellSize;
             gc.save();
@@ -339,14 +350,18 @@ public class Gameplay extends Application {
             }
             if (!full) {
                 //copy the none empty line to a copy of the array to replace the current array
-                if (writeRow != y) System.arraycopy(board[y], 0, board[writeRow], 0, W);
+                if (writeRow != y)
+                    System.arraycopy(board[y], 0, board[writeRow], 0, W);
                 writeRow--;
             } else {
                 score += 100;
             }
         }
-        for (int y = writeRow; y >= 0; y--) for (int x = 0; x < W; x++) board[y][x] = null;
-        if (scoreLabel != null) scoreLabel.setText("Score: " + score);
+        for (int y = writeRow; y >= 0; y--)
+            for (int x = 0; x < W; x++)
+                board[y][x] = null;
+        if (scoreLabel != null)
+            scoreLabel.setText("Score: " + score);
     }
 
     public static void main(String[] args) { launch(args); }
