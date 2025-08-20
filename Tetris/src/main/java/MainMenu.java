@@ -3,6 +3,10 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.application.Platform;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 
 public class MainMenu extends Application {
 
@@ -48,8 +52,22 @@ public class MainMenu extends Application {
         });
 
         exitButton.setOnAction(e -> {
-            primaryStage.close();
-            System.exit(0);
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.initOwner(primaryStage);
+            alert.setTitle("Confirm Exit");
+            alert.setHeaderText(null);
+            alert.setContentText("Are you sure you want to exit?");
+
+            ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
+            ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
+            alert.getButtonTypes().setAll(yes, no);
+
+            alert.showAndWait().ifPresent(response -> {
+                if (response == yes) {
+                    Platform.exit();   // graceful shutdown
+                }
+                // else: do nothing (return to main screen)
+            });
         });
 
         // Layout
