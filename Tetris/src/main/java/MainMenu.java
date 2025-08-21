@@ -21,60 +21,70 @@ public class MainMenu extends Application {
         Button configButton = new Button("Configurations");
         Button exitButton = new Button("Exit");
 
-        // Set uniform width & style
+        // Group buttons into an array for uniform styling
         Button[] buttons = { playButton, highScoreButton, configButton, exitButton };
         for (Button btn : buttons) {
             btn.setPrefWidth(buttonWidth);
             btn.setStyle("-fx-font-size: 14px; -fx-padding: 10px 20px;");
+
+            // Use switch-case for handling all button clicks in one place
+            btn.setOnAction(e -> {
+                String buttonText = btn.getText(); // identify button by label
+                switch (buttonText) {
+                    case "Play":
+                        System.out.println("Play button clicked (feature to be implemented)");
+                        break;
+
+                    case "High Score":
+                        try {
+                            HighScore highScoreView = new HighScore();
+                            highScoreView.start(primaryStage);
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                        break;
+
+                    case "Configurations":
+                        try {
+                            ConfigScreen configView = new ConfigScreen();
+                            configView.start(primaryStage);
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                        break;
+
+                    case "Exit":
+                        // Show confirmation before closing
+                        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                        alert.initOwner(primaryStage);
+                        alert.setTitle("Confirm Exit");
+                        alert.setHeaderText(null);
+                        alert.setContentText("Are you sure you want to exit?");
+
+                        ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
+                        ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
+                        alert.getButtonTypes().setAll(yes, no);
+
+                        alert.showAndWait().ifPresent(response -> {
+                            if (response == yes) {
+                                Platform.exit();   // graceful shutdown
+                            }
+                        });
+                        break;
+
+                    default:
+                        System.out.println("Unknown button clicked");
+                        break;
+                }
+            });
         }
 
-        // Button actions
-        highScoreButton.setOnAction(e -> {
-            HighScore highScoreView = new HighScore();
-            try {
-                highScoreView.start(primaryStage);
-            } catch (Exception ex) {
-                ex.printStackTrace();
-            }
-        });
-
-        playButton.setOnAction(e -> {
-            System.out.println("Play button clicked (feature to be implemented)");
-        });
-
-        configButton.setOnAction(e -> {
-            ConfigScreen configView = new ConfigScreen();
-            try {
-                configView.start(primaryStage);
-            } catch (Exception ex) {
-                ex.printStackTrace();
-            }
-        });
-
-        exitButton.setOnAction(e -> {
-            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-            alert.initOwner(primaryStage);
-            alert.setTitle("Confirm Exit");
-            alert.setHeaderText(null);
-            alert.setContentText("Are you sure you want to exit?");
-
-            ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
-            ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
-            alert.getButtonTypes().setAll(yes, no);
-
-            alert.showAndWait().ifPresent(response -> {
-                if (response == yes) {
-                    Platform.exit();   // graceful shutdown
-                }
-                // else: do nothing (return to main screen)
-            });
-        });
-
-        // Layout
+        // Layout: VBox with spacing and centered alignment
         VBox root = new VBox(15, playButton, highScoreButton, configButton, exitButton);
         root.setStyle("-fx-background-color: white; -fx-padding: 30;");
         root.setAlignment(javafx.geometry.Pos.CENTER);
 
+        // Create scene
         Scene scene = new Scene(root, 400, 350);
         primaryStage.setScene(scene);
         primaryStage.setTitle("Tetris Main Menu");
