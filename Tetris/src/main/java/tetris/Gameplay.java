@@ -48,55 +48,6 @@ public class Gameplay extends Application {
         int cols();
     }
 
-    abstract static class Piece {
-        protected final TetrominoType type;
-        protected final Color color; // NEW: color stored per piece
-        protected int row;
-        protected int col;
-
-        protected Piece(TetrominoType type, int startRow, int startCol, Color color) {
-            this.type = type;
-            this.color = color;
-            this.row = startRow;
-            this.col = startCol;
-        }
-
-        abstract Vec[] offsets();
-
-        protected static Vec rotateCW(Vec v) { return new Vec(v.y(), -v.x()); }
-
-        boolean tryMove(CollisionChecker grid, int dRow, int dCol) {
-            if (canPlace(grid, row + dRow, col + dCol, offsets())) {
-                row += dRow;
-                col += dCol;
-                return true;
-            }
-            return false;
-        }
-
-        Vec[] worldCells() {
-            Vec[] offs = offsets();
-            Vec[] cells = new Vec[offs.length];
-            for (int i = 0; i < offs.length; i++) {
-                Vec o = offs[i];
-                cells[i] = new Vec(col + o.x(), row + o.y());
-            }
-            return cells;
-        }
-
-        protected abstract void setOffsets(Vec[] newOffsets);
-
-        private static boolean canPlace(CollisionChecker grid, int r, int c, Vec[] offs) {
-            for (Vec o : offs) {
-                int rr = r + o.y();
-                int cc = c + o.x();
-                if (rr < 0 || rr >= grid.rows() || cc < 0 || cc >= grid.cols()) return false;
-                if (grid.blocked(rr, cc)) return false;
-            }
-            return true;
-        }
-    }
-
     private final Random rng = new Random();
     private Board board = new Board();
     private ActivePiece current;                 // the active falling piece
@@ -109,12 +60,6 @@ public class Gameplay extends Application {
     private int score = 0;
     private Label scoreLabel;
     private AnimationTimer timer;
-
-    private final CollisionChecker grid = new CollisionChecker() {
-        @Override public boolean blocked(int row, int col) { return board.cells()[row][col] != null; }
-        @Override public int rows() { return height; }
-        @Override public int cols() { return width; }
-    };
 
     @Override
     public void start(Stage stage) {
@@ -133,43 +78,53 @@ public class Gameplay extends Application {
 
         Button backButton = new Button("Back");
         backButton.setOnAction(e -> {
-            // Pause while the dialog is open
-            boolean wasPaused = paused;
-            paused = true;
-
-            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-            alert.initOwner(stage);
-            alert.setTitle("Leave Game?");
-            alert.setHeaderText("Exit to Main Menu");
-            alert.setContentText("Your current game will be lost. Are you sure?");
-
-            ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
-            ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
-            alert.getButtonTypes().setAll(yes, no);
-
-            alert.showAndWait().ifPresent(response -> {
-                if (response == yes) {
-                    if (timer != null) timer.stop();
-                    try {
-                        new MainMenu().start(stage);   // exit gameplay and return to main menu
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                    }
-                } else {
-                    // No → resume gameplay (only if it wasn't already paused before clicking Back)
-                    if (!wasPaused) {
-                        paused = false;
-                        lastDropTime = 0;  // reset drop timer so it doesn't insta-drop
-                    }
+            if (gameOver) {
+                // If game is already over → no alert, just go to main menu
+                if (timer != null) timer.stop();
+                try {
+                    new MainMenu().start(stage);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
                 }
-            });
+            } else {
+                // Pause while the dialog is open
+                boolean wasPaused = paused;
+                paused = true;
+
+                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                alert.initOwner(stage);
+                alert.setTitle("Leave Game?");
+                alert.setHeaderText("Exit to Main Menu");
+                alert.setContentText("Your current game will be lost. Are you sure?");
+
+                ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
+                ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
+                alert.getButtonTypes().setAll(yes, no);
+
+                alert.showAndWait().ifPresent(response -> {
+                    if (response == yes) {
+                        if (timer != null) timer.stop();
+                        try {
+                            new MainMenu().start(stage);   // exit gameplay and return to main menu
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                    } else {
+                        // No → resume gameplay (only if it wasn't already paused before clicking Back)
+                        if (!wasPaused) {
+                            paused = false;
+                            lastDropTime = 0;  // reset drop timer so it doesn't insta-drop
+                        }
+                    }
+                });
+            }
         });
 
         HBox backBar = new HBox(backButton);
         backBar.setAlignment(Pos.CENTER);
         backBar.setPadding(new Insets(10));
 
-        Label authorLabel = new Label("Author: Chamika Wickramarathne");
+        Label authorLabel = new Label("Version : v2.0.0");
         HBox authorBar = new HBox(authorLabel);
         authorBar.setAlignment(Pos.CENTER);
         authorBar.setPadding(new Insets(5));

@@ -88,7 +88,7 @@ public class HighScore extends Application {
 
 
         // Author
-        Label authorLabel = new Label("Author: Nimesha Gunarathne");
+        Label authorLabel = new Label("Version : v2.0.0");
         HBox authorBox = new HBox(authorLabel);
         authorBox.setAlignment(Pos.CENTER);
         authorBox.setPadding(new Insets(10, 0, 0, 0));
