@@ -1,4 +1,4 @@
-package tetris;
+package tetris.ui;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
@@ -30,6 +30,7 @@ import tetris.model.piece.ActivePiece;
 import tetris.model.rules.RotationStrategy;
 import tetris.model.rules.SrsRotation;
 import tetris.service.ScoreService;
+
 import java.util.Random;
 
 public class Gameplay extends Application {
