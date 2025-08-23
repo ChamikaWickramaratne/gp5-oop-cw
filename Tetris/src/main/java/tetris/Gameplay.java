@@ -19,10 +19,18 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 
+import tetris.model.Board;
+import tetris.model.TetrominoType;
+import tetris.model.Vec;
+import tetris.model.piece.ActivePiece;
+import tetris.model.rules.RotationStrategy;
+import tetris.model.rules.SrsRotation;
+import tetris.service.ScoreService;
 import java.util.Random;
-
-record Vec(int x, int y) {}
 
 public class Gameplay extends Application {
 
@@ -33,22 +41,6 @@ public class Gameplay extends Application {
     private static final Color[] colourOptions = {
             Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW
     };
-
-    enum TetrominoType {
-        I, O, T, L, J, S, Z;
-
-        Vec[] offsets() {
-            return switch (this) {
-                case I -> new Vec[]{ new Vec(0,0), new Vec(1,0), new Vec(2,0), new Vec(3,0) };
-                case O -> new Vec[]{ new Vec(0,0), new Vec(1,0), new Vec(0,1), new Vec(1,1) };
-                case T -> new Vec[]{ new Vec(0,0), new Vec(1,0), new Vec(2,0), new Vec(1,1) };
-                case L -> new Vec[]{ new Vec(0,0), new Vec(1,0), new Vec(2,0), new Vec(2,1) };
-                case J -> new Vec[]{ new Vec(0,0), new Vec(1,0), new Vec(2,0), new Vec(0,1) };
-                case S -> new Vec[]{ new Vec(1,0), new Vec(2,0), new Vec(0,1), new Vec(1,1) };
-                case Z -> new Vec[]{ new Vec(0,0), new Vec(1,0), new Vec(1,1), new Vec(2,1) };
-            };
-        }
-    }
 
     interface CollisionChecker {
         boolean blocked(int row, int col);
@@ -72,17 +64,6 @@ public class Gameplay extends Application {
         abstract Vec[] offsets();
 
         protected static Vec rotateCW(Vec v) { return new Vec(v.y(), -v.x()); }
-
-        boolean tryRotateCW(CollisionChecker grid) {
-            Vec[] source = offsets();
-            Vec[] rotated = new Vec[source.length];
-            for (int i = 0; i < source.length; i++) rotated[i] = rotateCW(source[i]);
-            if (canPlace(grid, row, col, rotated)) {
-                setOffsets(rotated);
-                return true;
-            }
-            return false;
-        }
 
         boolean tryMove(CollisionChecker grid, int dRow, int dCol) {
             if (canPlace(grid, row + dRow, col + dCol, offsets())) {
@@ -116,20 +97,11 @@ public class Gameplay extends Application {
         }
     }
 
-    static class StandardPiece extends Piece {
-        private Vec[] localOffsets;
-        StandardPiece(TetrominoType type, int startRow, int startCol, Vec[] baseOffsets, Color color) {
-            super(type, startRow, startCol, color); // UPDATED ctor
-            this.localOffsets = baseOffsets;
-        }
-        @Override Vec[] offsets() { return localOffsets; }
-        @Override protected void setOffsets(Vec[] newOffsets) { this.localOffsets = newOffsets; }
-    }
-
     private final Random rng = new Random();
-    // CHANGED: store Color instead of TetrominoType
-    private Color[][] board = new Color[height][width];
-    private Piece currentPiece;
+    private Board board = new Board();
+    private ActivePiece current;                 // the active falling piece
+    private Color currentColor;                  // colour for the active piece
+    private final RotationStrategy rotator = new SrsRotation();  // rotation rules
     private long lastDropTime = 0L;
     private long dropSpeed = 1_000_000_000L;
     private boolean paused = false;
@@ -139,7 +111,7 @@ public class Gameplay extends Application {
     private AnimationTimer timer;
 
     private final CollisionChecker grid = new CollisionChecker() {
-        @Override public boolean blocked(int row, int col) { return board[row][col] != null; }
+        @Override public boolean blocked(int row, int col) { return board.cells()[row][col] != null; }
         @Override public int rows() { return height; }
         @Override public int cols() { return width; }
     };
@@ -161,8 +133,36 @@ public class Gameplay extends Application {
 
         Button backButton = new Button("Back");
         backButton.setOnAction(e -> {
-            if (timer != null) timer.stop();
-            try { new MainMenu().start(stage); } catch (Exception ex) { ex.printStackTrace(); }
+            // Pause while the dialog is open
+            boolean wasPaused = paused;
+            paused = true;
+
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.initOwner(stage);
+            alert.setTitle("Leave Game?");
+            alert.setHeaderText("Exit to Main Menu");
+            alert.setContentText("Your current game will be lost. Are you sure?");
+
+            ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
+            ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
+            alert.getButtonTypes().setAll(yes, no);
+
+            alert.showAndWait().ifPresent(response -> {
+                if (response == yes) {
+                    if (timer != null) timer.stop();
+                    try {
+                        new MainMenu().start(stage);   // exit gameplay and return to main menu
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                } else {
+                    // No → resume gameplay (only if it wasn't already paused before clicking Back)
+                    if (!wasPaused) {
+                        paused = false;
+                        lastDropTime = 0;  // reset drop timer so it doesn't insta-drop
+                    }
+                }
+            });
         });
 
         HBox backBar = new HBox(backButton);
@@ -189,6 +189,7 @@ public class Gameplay extends Application {
                 case S -> boost(true);
                 case P -> pauseGame();
                 case W, UP -> tryRotate();
+
             }
         });
         scene.setOnKeyReleased(e -> {
@@ -218,7 +219,7 @@ public class Gameplay extends Application {
     }
 
     private void resetGameState() {
-        board = new Color[height][width]; // UPDATED type
+        board = new Board();
         score = 0;
         paused = false;
         gameOver = false;
@@ -242,39 +243,47 @@ public class Gameplay extends Application {
         int shapeWidth = (maxX - minX + 1);
         int startCol = Math.max(0, (width - shapeWidth) / 2 - minX);
 
-        Color color = colourOptions[rng.nextInt(colourOptions.length)];
-        currentPiece = new StandardPiece(type, 0, startCol, base, color);
+        current = new ActivePiece(type, new Vec(startCol, 0));
+        currentColor = colourOptions[rng.nextInt(colourOptions.length)];
 
-        for (Vec c : currentPiece.worldCells()) {
-            if (c.y() < 0 || c.y() >= height || c.x() < 0 || c.x() >= width || board[c.y()][c.x()] != null) {
+        for (Vec c : current.worldCells()) {
+            if (c.y() < 0 || c.y() >= height || c.x() < 0 || c.x() >= width || board.cells()[c.y()][c.x()] != null) {
                 gameOver = true;
                 return;
             }
         }
     }
 
-    private boolean tryBoost() { return currentPiece.tryMove(grid, +1, 0); }
+    private boolean tryBoost() {
+        current.moveBy(0, +1);
+        if (board.canPlace(current)) return true;
+        current.moveBy(0, -1);
+        return false;
+    }
 
     private void lockPiece() {
-        for (Vec c : currentPiece.worldCells()) {
-            if (c.y() >= 0 && c.y() < height && c.x() >= 0 && c.x() < width) {
-                board[c.y()][c.x()] = currentPiece.color; // UPDATED: store color
-            }
-        }
-        clearFullLines();
+        board.lock(current, currentColor);
+        int cleared = board.clearLines();
+        score += ScoreService.pointsFor(cleared);
+        if (scoreLabel != null) scoreLabel.setText("Score: " + score);
         spawnNewPiece();
     }
 
     private void tryMoveLeft()  {
-        currentPiece.tryMove(grid, 0, -1);
+        move(+ -1, 0);
     }
 
     private void tryMoveRight() {
-        currentPiece.tryMove(grid, 0, +1);
+        move(+  1, 0);
     }
 
     private void tryRotate() {
-        currentPiece.tryRotateCW(grid);
+        rotator.tryRotateCW(current, board);
+    }
+
+    private void move(int dx, int dy) {
+        current.moveBy(dx, dy);
+        if (!board.canPlace(current)) current.moveBy(-dx, -dy);
     }
 
     private void boost(boolean pressed) {
@@ -301,7 +310,7 @@ public class Gameplay extends Application {
 
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
-                Color cell = board[y][x];
+                Color cell = board.cells()[y][x];
                 if (cell != null) {
                     double px = x * cellSize, py = y * cellSize;
                     gc.setFill(cell);
@@ -312,15 +321,15 @@ public class Gameplay extends Application {
             }
         }
 
-        gc.setFill(currentPiece.color);
-        for (Vec c : currentPiece.worldCells()) {
+        gc.setFill(currentColor);
+        for (Vec c : current.worldCells()) {
             double px = c.x() * cellSize, py = c.y() * cellSize;
             gc.fillRect(px, py, cellSize, cellSize);
             gc.setStroke(Color.BLACK);
             gc.strokeRect(px, py, cellSize, cellSize);
         }
 
-        //game over/paused overlay
+        // game over / paused overlay
         if (paused || gameOver) {
             double w = W * cellSize, h = H * cellSize;
             gc.save();
@@ -330,38 +339,19 @@ public class Gameplay extends Application {
 
             gc.setGlobalAlpha(1.0);
             gc.setFill(Color.WHITE);
-            gc.setFont(Font.font("Arial", FontWeight.BOLD, 36));
             gc.setTextAlign(TextAlignment.CENTER);
             gc.setTextBaseline(VPos.CENTER);
-            gc.fillText(gameOver ? "Game Over" : "PAUSED", w / 2.0, h / 2.0);
+
+            String title = gameOver ? "Game Over" : "PAUSED";
+            String hint  = gameOver ? "Press Back to return" : "Press 'P' to resume";
+
+            gc.setFont(Font.font("Arial", FontWeight.BOLD, 36));
+            gc.fillText(title, w / 2.0, h / 2.0 - 18);    // slightly above center
+
+            gc.setFont(Font.font("Arial", FontWeight.NORMAL, 18));
+            gc.fillText(hint,  w / 2.0, h / 2.0 + 16);    // slightly below center
             gc.restore();
         }
-    }
-
-    //clear last full line and add marks
-    private void clearFullLines() {
-        int H = height, W = width;
-        int writeRow = H - 1;
-
-        for (int y = H - 1; y >= 0; y--) {
-            boolean full = true;
-            for (int x = 0; x < W; x++) {
-                if (board[y][x] == null) { full = false; break; }
-            }
-            if (!full) {
-                //copy the none empty line to a copy of the array to replace the current array
-                if (writeRow != y)
-                    System.arraycopy(board[y], 0, board[writeRow], 0, W);
-                writeRow--;
-            } else {
-                score += 100;
-            }
-        }
-        for (int y = writeRow; y >= 0; y--)
-            for (int x = 0; x < W; x++)
-                board[y][x] = null;
-        if (scoreLabel != null)
-            scoreLabel.setText("Score: " + score);
     }
 
     public static void main(String[] args) { launch(args); }
