@@ -1,4 +1,5 @@
-import com.sun.tools.javac.Main;
+package tetris;
+
 import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
