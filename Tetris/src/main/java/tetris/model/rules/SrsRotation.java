@@ -1,10 +1,16 @@
 package tetris.model.rules;
 
 import tetris.model.Board;
+import tetris.model.TetrominoType;
 import tetris.model.piece.ActivePiece;
 
 public class SrsRotation implements RotationStrategy {
     @Override public boolean tryRotateCW(ActivePiece p, Board b) {
+
+        // FIX: O-piece should not rotate
+        if (p.type() == TetrominoType.O) {
+            return false;
+        }
         int before = p.rotation();
         p.rotateCW();
         if (b.canPlace(p)) return true;
