@@ -36,7 +36,12 @@ public class MainMenu extends Application {
                 String buttonText = btn.getText(); // identify button by label
                 switch (buttonText) {
                     case "Play":
-                        System.out.println("Play button clicked (feature to be implemented)");
+                        try {
+                            Gameplay gameplayView = new Gameplay();
+                            gameplayView.start(primaryStage);
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
                         break;
 
                     case "High Score":
