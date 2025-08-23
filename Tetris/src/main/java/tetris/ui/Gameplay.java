@@ -226,15 +226,21 @@ public class Gameplay extends Application {
     }
 
     private void tryMoveLeft()  {
-        move(+ -1, 0);
+        if (!paused){
+            move(+ -1, 0);
+        }
     }
 
     private void tryMoveRight() {
-        move(+  1, 0);
+        if (!paused){
+            move(+  1, 0);
+        }
     }
 
     private void tryRotate() {
-        rotator.tryRotateCW(current, board);
+        if (!paused){
+            rotator.tryRotateCW(current, board);
+        }
     }
 
     private void move(int dx, int dy) {
