@@ -35,14 +35,22 @@ import java.util.Random;
 
 public class Gameplay extends Application {
 
+    //constants
     private static final int cellSize = 20;
     private final int width = 10;
     private final int height = 20;
+    private long lastDropTime = 0L;
+    private long dropSpeed = 1_000_000_000L;
+    private boolean paused = false;
+    private boolean gameOver = false;
+    private int score = 0;
 
+    //the color options array
     private static final Color[] colourOptions = {
             Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW
     };
 
+    //collision checker used to check for collisions before rotating and locking blocks in
     interface CollisionChecker {
         boolean blocked(int row, int col);
         int rows();
@@ -54,11 +62,6 @@ public class Gameplay extends Application {
     private ActivePiece current;                 // the active falling piece
     private Color currentColor;                  // colour for the active piece
     private final RotationStrategy rotator = new SrsRotation();  // rotation rules
-    private long lastDropTime = 0L;
-    private long dropSpeed = 1_000_000_000L;
-    private boolean paused = false;
-    private boolean gameOver = false;
-    private int score = 0;
     private Label scoreLabel;
     private AnimationTimer timer;
 
@@ -138,6 +141,7 @@ public class Gameplay extends Application {
         Scene scene = new Scene(root);
         stage.setScene(scene);
 
+        //controls
         scene.setOnKeyPressed(e -> {
             switch (e.getCode()) {
                 case A -> tryMoveLeft();
@@ -148,6 +152,7 @@ public class Gameplay extends Application {
 
             }
         });
+        //stop boost when button released
         scene.setOnKeyReleased(e -> {
             if (e.getCode() == KeyCode.S) boost(false);
         });
@@ -159,6 +164,7 @@ public class Gameplay extends Application {
         resetGameState();
         spawnNewPiece();
 
+        //gameplay timer.
         timer = new AnimationTimer() {
             @Override public void handle(long now) {
                 if (!paused && !gameOver) {
@@ -174,6 +180,7 @@ public class Gameplay extends Application {
         timer.start();
     }
 
+    //start new game
     private void resetGameState() {
         board = new Board();
         score = 0;
@@ -190,7 +197,9 @@ public class Gameplay extends Application {
         spawnNewPiece();
     }
 
+    //spawning a new piece on top
     private void spawnNewPiece() {
+        //get random piece type
         TetrominoType type = TetrominoType.values()[rng.nextInt(TetrominoType.values().length)];
         Vec[] base = type.offsets();
 
@@ -202,6 +211,7 @@ public class Gameplay extends Application {
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = colourOptions[rng.nextInt(colourOptions.length)];
 
+        //game over check. if cant spawn a piece at the top
         for (Vec c : current.worldCells()) {
             if (c.y() < 0 || c.y() >= height || c.x() < 0 || c.x() >= width || board.cells()[c.y()][c.x()] != null) {
                 gameOver = true;
@@ -210,6 +220,7 @@ public class Gameplay extends Application {
         }
     }
 
+    //boose piece fall speed
     private boolean tryBoost() {
         current.moveBy(0, +1);
         if (board.canPlace(current)) return true;
@@ -217,6 +228,7 @@ public class Gameplay extends Application {
         return false;
     }
 
+    //lock peice when the hit the bottom
     private void lockPiece() {
         board.lock(current, currentColor);
         int cleared = board.clearLines();
@@ -225,6 +237,7 @@ public class Gameplay extends Application {
         spawnNewPiece();
     }
 
+    //movement methods
     private void tryMoveLeft()  {
         if (!paused){
             move(+ -1, 0);

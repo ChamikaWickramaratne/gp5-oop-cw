@@ -5,7 +5,6 @@ import java.util.List;
 import tetris.model.TetrominoType;
 import tetris.model.Vec;
 
-/** ABSTRACT base class (Rubric) */
 public abstract class Piece {
     protected final TetrominoType type;
     protected int rotation; // 0..3
@@ -15,7 +14,6 @@ public abstract class Piece {
     public TetrominoType type() { return type; }
     public int rotation() { return rotation; }
 
-    /** Local cells after rotation – uses ENHANCED FOR. */
     public List<Vec> localCells() {
         var list = new ArrayList<Vec>();
         for (var o : type.offsets()) list.add(rotate(o, rotation));

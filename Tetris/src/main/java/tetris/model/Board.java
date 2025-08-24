@@ -31,7 +31,6 @@ public class Board {
         for (Vec c : p.worldCells()) grid[c.y()][c.x()] = color;              // ENHANCED FOR
     }
 
-    /** Clears full lines and returns count. */
     public int clearLines() {
         int write = HEIGHT - 1, cleared = 0;
         for (int y = HEIGHT - 1; y >= 0; y--) {
