@@ -1,4 +1,4 @@
-package tetris;
+package tetris.ui;
 
 import javafx.application.Application;
 import javafx.scene.Scene;
@@ -9,8 +9,6 @@ import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
-import tetris.ConfigScreen;
-import tetris.HighScore;
 
 public class MainMenu extends Application {
 
@@ -94,7 +92,7 @@ public class MainMenu extends Application {
         root.setAlignment(javafx.geometry.Pos.CENTER);
 
         // Create scene
-        Scene scene = new Scene(root, 400, 350);
+        Scene scene = new Scene(root, UIConfigurations.WINDOW_HEIGHT, UIConfigurations.WINDOW_WIDTH);
         primaryStage.setScene(scene);
         primaryStage.setTitle("Tetris Main Menu");
         primaryStage.show();

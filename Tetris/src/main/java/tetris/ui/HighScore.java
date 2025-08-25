@@ -1,4 +1,4 @@
-package tetris;
+package tetris.ui;
 
 import javafx.application.Application;
 import javafx.geometry.Insets;
@@ -88,7 +88,7 @@ public class HighScore extends Application {
 
 
         // Author
-        Label authorLabel = new Label("Author: Nimesha Gunarathne");
+        Label authorLabel = new Label("Version : v2.0.0");
         HBox authorBox = new HBox(authorLabel);
         authorBox.setAlignment(Pos.CENTER);
         authorBox.setPadding(new Insets(10, 0, 0, 0));
@@ -98,7 +98,7 @@ public class HighScore extends Application {
         root.setPadding(new Insets(20));
         root.setStyle("-fx-background-color: white;");
 
-        Scene scene = new Scene(root, 400, 500);
+        Scene scene = new Scene(root, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
         stage.setTitle("Tetris");
         stage.setScene(scene);
         stage.show();

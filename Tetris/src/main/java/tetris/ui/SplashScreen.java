@@ -1,4 +1,4 @@
-package tetris;
+package tetris.ui;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -27,7 +27,7 @@ public class SplashScreen extends Application {
         // Load splash image
         URL imageUrl = getClass().getClassLoader().getResource("pic3.png");
         if (imageUrl == null) {
-            throw new IllegalStateException("❌ pic3.png not found in resources!");
+            throw new IllegalStateException("pic3.png not found in resources!");
         }
 
         ImageView splashImage = new ImageView(new Image(imageUrl.toExternalForm()));
@@ -35,19 +35,37 @@ public class SplashScreen extends Application {
         splashImage.setFitWidth(400);
         splashImage.setFitHeight(350);
 
+        // Create info labels
+        Label groupLabel = new Label("Group ID: GP05");
+        Label courseLabel = new Label("Course Code: 7010ICT");
+        Label versionLabel = new Label("Version: v2.0.0");
+
+        // Style labels
+        String infoStyle = "-fx-font-size: 12px; -fx-text-fill: white;";
+        groupLabel.setStyle(infoStyle);
+        courseLabel.setStyle(infoStyle);
+        versionLabel.setStyle(infoStyle);
+
         // Create animated loading label
         Label loadingLabel = new Label("Loading");
         loadingLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: white;");
         animateLoadingText(loadingLabel);
 
-        VBox content = new VBox(splashImage, loadingLabel);
+        // Add everything to VBox
+        VBox content = new VBox(
+                splashImage,
+                groupLabel,
+                courseLabel,
+                versionLabel,
+                loadingLabel
+        );
         content.setAlignment(Pos.CENTER);
-        content.setSpacing(10);
+        content.setSpacing(6);
 
         StackPane splashLayout = new StackPane(content);
         splashLayout.setStyle("-fx-background-color: black;");
 
-        Scene splashScene = new Scene(splashLayout, 400, 400);
+        Scene splashScene = new Scene(splashLayout, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
         splashStage.setScene(splashScene);
         splashStage.centerOnScreen();
         splashStage.show();
