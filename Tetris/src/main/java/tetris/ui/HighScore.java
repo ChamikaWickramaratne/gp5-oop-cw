@@ -98,7 +98,7 @@ public class HighScore extends Application {
         root.setPadding(new Insets(20));
         root.setStyle("-fx-background-color: white;");
 
-        Scene scene = new Scene(root, 400, 500);
+        Scene scene = new Scene(root, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
         stage.setTitle("Tetris");
         stage.setScene(scene);
         stage.show();

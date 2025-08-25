@@ -65,7 +65,7 @@ public class SplashScreen extends Application {
         StackPane splashLayout = new StackPane(content);
         splashLayout.setStyle("-fx-background-color: black;");
 
-        Scene splashScene = new Scene(splashLayout, 400, 460);
+        Scene splashScene = new Scene(splashLayout, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
         splashStage.setScene(splashScene);
         splashStage.centerOnScreen();
         splashStage.show();

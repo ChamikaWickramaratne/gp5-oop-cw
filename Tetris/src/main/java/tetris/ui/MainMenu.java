@@ -92,7 +92,8 @@ public class MainMenu extends Application {
         root.setAlignment(javafx.geometry.Pos.CENTER);
 
         // Create scene
-        Scene scene = new Scene(root, 400, 350);
+        Scene scene = new Scene(root, UIConfigurations.WINDOW_HEIGHT, UIConfigurations.WINDOW_WIDTH);
+        scene.setFill(UIConfigurations.BACKGROUND_COLOR);
         primaryStage.setScene(scene);
         primaryStage.setTitle("Tetris Main Menu");
         primaryStage.show();

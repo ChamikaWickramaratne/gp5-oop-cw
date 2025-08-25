@@ -138,7 +138,7 @@ public class Gameplay extends Application {
         root.setCenter(boardCanvas);
         root.setBottom(new VBox(backBar, authorBar));
         root.setStyle("-fx-background-color: #f9f9f9;");
-        Scene scene = new Scene(root);
+        Scene scene = new Scene(root, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
         stage.setScene(scene);
 
         //controls

@@ -124,7 +124,7 @@ public class ConfigScreen extends Application {
         layout.setPadding(new Insets(20));
         layout.setAlignment(Pos.CENTER_LEFT);
 
-        Scene configScene = new Scene(layout, 400, 500);
+        Scene configScene = new Scene(layout, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
         stage.setScene(configScene);
         stage.setTitle("Configuration");
         stage.show();
