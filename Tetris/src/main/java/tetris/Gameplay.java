@@ -19,6 +19,9 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 
 import java.util.Random;
 
@@ -161,8 +164,36 @@ public class Gameplay extends Application {
 
         Button backButton = new Button("Back");
         backButton.setOnAction(e -> {
-            if (timer != null) timer.stop();
-            try { new MainMenu().start(stage); } catch (Exception ex) { ex.printStackTrace(); }
+            // Pause while the dialog is open
+            boolean wasPaused = paused;
+            paused = true;
+
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.initOwner(stage);
+            alert.setTitle("Leave Game?");
+            alert.setHeaderText("Exit to Main Menu");
+            alert.setContentText("Your current game will be lost. Are you sure?");
+
+            ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
+            ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
+            alert.getButtonTypes().setAll(yes, no);
+
+            alert.showAndWait().ifPresent(response -> {
+                if (response == yes) {
+                    if (timer != null) timer.stop();
+                    try {
+                        new MainMenu().start(stage);   // exit gameplay and return to main menu
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                } else {
+                    // No → resume gameplay (only if it wasn't already paused before clicking Back)
+                    if (!wasPaused) {
+                        paused = false;
+                        lastDropTime = 0;  // reset drop timer so it doesn't insta-drop
+                    }
+                }
+            });
         });
 
         HBox backBar = new HBox(backButton);
@@ -320,7 +351,7 @@ public class Gameplay extends Application {
             gc.strokeRect(px, py, cellSize, cellSize);
         }
 
-        //game over/paused overlay
+        // game over / paused overlay
         if (paused || gameOver) {
             double w = W * cellSize, h = H * cellSize;
             gc.save();
@@ -330,10 +361,17 @@ public class Gameplay extends Application {
 
             gc.setGlobalAlpha(1.0);
             gc.setFill(Color.WHITE);
-            gc.setFont(Font.font("Arial", FontWeight.BOLD, 36));
             gc.setTextAlign(TextAlignment.CENTER);
             gc.setTextBaseline(VPos.CENTER);
-            gc.fillText(gameOver ? "Game Over" : "PAUSED", w / 2.0, h / 2.0);
+
+            String title = gameOver ? "Game Over" : "PAUSED";
+            String hint  = gameOver ? "Press Back to return" : "Press 'P' to resume";
+
+            gc.setFont(Font.font("Arial", FontWeight.BOLD, 36));
+            gc.fillText(title, w / 2.0, h / 2.0 - 18);    // slightly above center
+
+            gc.setFont(Font.font("Arial", FontWeight.NORMAL, 18));
+            gc.fillText(hint,  w / 2.0, h / 2.0 + 16);    // slightly below center
             gc.restore();
         }
     }
