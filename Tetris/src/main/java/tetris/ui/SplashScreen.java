@@ -74,7 +74,7 @@ public class SplashScreen extends Application {
         Task<Void> loadTask = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                Thread.sleep(4000); // 4 seconds delay
+                Thread.sleep(500); // 4 seconds delay
                 return null;
             }
 

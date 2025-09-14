@@ -9,6 +9,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
@@ -28,37 +29,56 @@ public class ConfigScreen extends Application {
         titleBox.setPadding(new Insets(0, 0, 20, 0));
 
         // Field Width
+        HBox fieldWidthRow = new HBox(10); // 10px spacing
+        fieldWidthRow.setAlignment(Pos.CENTER_LEFT);
+
         Label fieldWidthLabel = new Label("Field Width (No of cells):");
+        fieldWidthLabel.setMinWidth(100);   // keep labels aligned
         Slider fieldWidthSlider = createSlider(5, 15, 10);
-        Label fieldWidthValue = new Label(Integer.toString((int) fieldWidthSlider.getValue()));
+        Label fieldWidthValue = new Label("10");
+
         fieldWidthSlider.valueProperty().addListener((obs, oldVal, newVal) ->
                 fieldWidthValue.setText(Integer.toString(newVal.intValue()))
         );
-        HBox fieldWidthRow = new HBox(10, fieldWidthSlider, fieldWidthValue);
-        fieldWidthRow.setAlignment(Pos.TOP_LEFT);
-        fieldWidthValue.setPadding(new Insets(0, 0, 0, 50));
+
+        // allow slider to stretch
+        HBox.setHgrow(fieldWidthSlider, Priority.ALWAYS);
+
+        fieldWidthRow.getChildren().addAll(fieldWidthLabel, fieldWidthSlider, fieldWidthValue);
 
         // Field Height
+        HBox fieldHeightRow = new HBox(10);
+        fieldHeightRow.setAlignment(Pos.CENTER_LEFT);
+
         Label fieldHeightLabel = new Label("Field Height (No of cells):");
+        fieldHeightLabel.setMinWidth(90);  // same width as fieldWidthLabel
         Slider fieldHeightSlider = createSlider(15, 30, 20);
-        Label fieldHeightValue = new Label(Integer.toString((int) fieldHeightSlider.getValue()));
+        Label fieldHeightValue = new Label("20");
+
         fieldHeightSlider.valueProperty().addListener((obs, oldVal, newVal) ->
                 fieldHeightValue.setText(Integer.toString(newVal.intValue()))
         );
-        HBox fieldHeightRow = new HBox(10, fieldHeightSlider, fieldHeightValue);
-        fieldHeightRow.setAlignment(Pos.TOP_LEFT);
-        fieldHeightValue.setPadding(new Insets(0, 0, 0, 50));
+
+        HBox.setHgrow(fieldHeightSlider, Priority.ALWAYS);
+
+        fieldHeightRow.getChildren().addAll(fieldHeightLabel, fieldHeightSlider, fieldHeightValue);
 
         // Game Level
+        HBox fieldGameRow = new HBox(10);
+        fieldGameRow.setAlignment(Pos.CENTER_LEFT);
+
         Label gameLevelLabel = new Label("Game Level:");
+        gameLevelLabel.setMinWidth(130); // match width with Field Width/Height labels
         Slider gameLevelSlider = createSlider(1, 10, 1);
-        Label gameLevelValue = new Label(Integer.toString((int) gameLevelSlider.getValue()));
+        Label fieldGameValue = new Label("1");
+
         gameLevelSlider.valueProperty().addListener((obs, oldVal, newVal) ->
-                gameLevelValue.setText(Integer.toString(newVal.intValue()))
+                fieldGameValue.setText(Integer.toString(newVal.intValue()))
         );
-        HBox gameLevelRow = new HBox(10, gameLevelSlider, gameLevelValue);
-        gameLevelRow.setAlignment(Pos.TOP_LEFT);
-        gameLevelValue.setPadding(new Insets(0, 0, 0, 50));
+        HBox.setHgrow(gameLevelSlider, Priority.ALWAYS);
+
+        fieldGameRow.getChildren().addAll(gameLevelLabel, gameLevelSlider, fieldGameValue);
+
 
         // Music
         CheckBox musicCheckBox = new CheckBox("Music");
@@ -115,9 +135,9 @@ public class ConfigScreen extends Application {
         // Layout
         VBox layout = new VBox(10,
                 titleBox,
-                fieldWidthLabel, fieldWidthRow,
-                fieldHeightLabel, fieldHeightRow,
-                gameLevelLabel, gameLevelRow,
+                fieldWidthRow,
+                fieldHeightRow,
+                fieldGameRow,
                 musicRow, soundRow, aiRow, extendRow,
                 backBox
         );
