@@ -35,8 +35,8 @@ public class MainMenu extends Application {
                 switch (buttonText) {
                     case "Play":
                         try {
-                            Gameplay gameplayView = new Gameplay();
-                            gameplayView.start(primaryStage);
+                            tetris.ui.Gameplay gameplayNewView = new tetris.ui.Gameplay();
+                            gameplayNewView.start(primaryStage);
                         } catch (Exception ex) {
                             ex.printStackTrace();
                         }

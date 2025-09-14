@@ -4,9 +4,20 @@ import javafx.scene.paint.Color;
 import tetris.model.piece.ActivePiece;
 
 public class Board {
-    public static final int WIDTH = 10, HEIGHT = 20, CELL = 20;
+    public static final int CELL_SIZE = 20;   // keep cell size constant for drawing
+    public static int WIDTH;
+    public static int HEIGHT;
+    private final Color[][] grid;
 
-    private final Color[][] grid = new Color[HEIGHT][WIDTH];
+    // Configurable constructor
+    public Board(int width, int height) {
+        this.WIDTH = width;
+        this.HEIGHT = height;
+        this.grid = new Color[HEIGHT][WIDTH];
+    }
+
+    // Default (10x20) for backwards compatibility
+    public Board() { this(10, 20); }
 
     public Color[][] cells() { return grid; }
 

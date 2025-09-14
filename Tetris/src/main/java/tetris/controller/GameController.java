@@ -9,6 +9,8 @@ import tetris.model.rules.RotationStrategy;
 import tetris.model.rules.SrsRotation;
 import tetris.service.ScoreService;
 import java.util.Random;
+import tetris.config.ConfigService;
+import tetris.config.TetrisConfig;
 
 public final class GameController {
     private static final long NORMAL_DROP_NS = 1_000_000_000L;
@@ -16,23 +18,30 @@ public final class GameController {
     private static final Color[] COLOUR_OPTIONS = {Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW};
     private final Random rng = new Random();
     private final RotationStrategy rotator = new SrsRotation();
-    private Board board = new Board();
     private ActivePiece current;
     private Color currentColor;
     private long lastDropTime = 0L;
-    private long dropSpeed = NORMAL_DROP_NS;
     private boolean paused = false;
     private boolean gameOver = false;
     private int score = 0;
 
+    // Config
+    private final TetrisConfig config = ConfigService.load();
+
+    // Drop speed depends on init level
+    private long dropSpeed = NORMAL_DROP_NS / Math.max(1, config.getGameLevel());
+
+    // Create board with config size
+    private Board board = new Board(config.getFieldWidth(), config.getFieldHeight());
+
     //start new game
     public void resetGameState() {
-        board = new Board();
+        board = new Board(config.getFieldWidth(), config.getFieldHeight());
         score = 0;
         paused = false;
         gameOver = false;
         lastDropTime = 0L;
-        dropSpeed = NORMAL_DROP_NS;
+        dropSpeed = NORMAL_DROP_NS / Math.max(1, config.getGameLevel());
     }
 
     public void spawnNewPiece() {
@@ -70,7 +79,7 @@ public final class GameController {
     public void tryMoveLeft() { if (!paused && !gameOver) move(-1, 0); }
     public void tryMoveRight() { if (!paused && !gameOver) move(1, 0); }
     public void tryRotate() { if (!paused && !gameOver) rotator.tryRotateCW(current, board); }
-    public void boost(boolean pressed) { dropSpeed = pressed ? FAST_DROP_NS : NORMAL_DROP_NS; }
+    public void boost(boolean pressed) { dropSpeed = pressed ? FAST_DROP_NS : NORMAL_DROP_NS / Math.max(1, config.getGameLevel()); }
     public void pauseGame() { paused = !paused; if (!paused) lastDropTime = 0L; }
 
     public Board getBoard() { return board; }

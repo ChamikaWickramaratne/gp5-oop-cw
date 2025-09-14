@@ -27,13 +27,19 @@ import tetris.model.Board;
 import tetris.model.Vec;
 import tetris.model.piece.ActivePiece;
 import tetris.controller.GameController;
+import tetris.config.ConfigService;
+import tetris.config.TetrisConfig;
+
+import static tetris.model.Board.HEIGHT;
+import static tetris.model.Board.WIDTH;
 
 public class Gameplay extends Application {
 
+    // Config
+    private final TetrisConfig config = ConfigService.load();
+
     //constants
     private static final int CELL_SIZE = 20;
-    private final int WIDTH = 10;
-    private final int HEIGHT = 20;
     private Label scoreLabel;
     private AnimationTimer timer;
     private GameController controller = new GameController();
@@ -65,7 +71,8 @@ public class Gameplay extends Application {
                 }
             } else {
                 boolean wasPaused = controller.isPaused();
-                controller.pauseGame();
+                if (!wasPaused) controller.pauseGame();
+
                 Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
                 alert.initOwner(stage);
                 alert.setTitle("Leave Game?");
@@ -104,7 +111,10 @@ public class Gameplay extends Application {
         root.setCenter(boardCanvas);
         root.setBottom(new VBox(backBar, authorBar));
         root.setStyle("-fx-background-color: #f9f9f9;");
-        Scene scene = new Scene(root, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
+
+        int sceneWidth  = WIDTH  * CELL_SIZE + 40;  // +40 for padding/margins
+        int sceneHeight = HEIGHT * CELL_SIZE + 120; // +120 for top/bottom bars
+        Scene scene = new Scene(root, sceneWidth, sceneHeight);
         stage.setScene(scene);
 
         //controls
@@ -143,7 +153,7 @@ public class Gameplay extends Application {
 
     //drawing the board each time
     private void draw(GraphicsContext gc) {
-        int W = Board.WIDTH, H = Board.HEIGHT;
+        int W = WIDTH, H = HEIGHT;
         gc.clearRect(0, 0, W * CELL_SIZE, H * CELL_SIZE);
         gc.setStroke(Color.LIGHTGRAY);
 
