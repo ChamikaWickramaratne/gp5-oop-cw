@@ -99,7 +99,6 @@ public class Gameplay extends Application {
         int sceneHeight = board.height() * cellSize + 120; // +120 for top/bottom bars
         Scene scene = new Scene(root, sceneWidth, sceneHeight);
 
-        //Scene scene = new Scene(root, config.getFieldWidth()+3, config.getFieldHeight()+3);
         stage.setScene(scene);
 
         //controls
