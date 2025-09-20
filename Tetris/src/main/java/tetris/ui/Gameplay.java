@@ -23,6 +23,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 
+import tetris.dto.OpMove;
 import tetris.model.Board;
 import tetris.model.TetrominoType;
 import tetris.model.Vec;
@@ -64,6 +65,14 @@ public class Gameplay extends Application {
     private final RotationStrategy rotator = new SrsRotation();  // rotation rules
     private Label scoreLabel;
     private AnimationTimer timer;
+    private TetrominoType nextType;
+    private Color nextColor;
+    private Canvas nextCanvas;
+    private boolean useExternal = false;
+    private tetris.net.INetwork net;
+    private tetris.players.Player extPlayer;
+    private boolean extControlsThisPiece = false;
+
 
     @Override
     public void start(Stage stage) {
@@ -128,6 +137,12 @@ public class Gameplay extends Application {
         backBar.setAlignment(Pos.CENTER);
         backBar.setPadding(new Insets(10));
 
+        nextCanvas = new Canvas(6 * cellSize, 6 * cellSize);
+        VBox rightBar = new VBox(new Label("Next"), nextCanvas);
+        rightBar.setAlignment(Pos.TOP_CENTER);
+        rightBar.setSpacing(6);
+        rightBar.setPadding(new Insets(10));
+
         Label authorLabel = new Label("Version : v2.0.0");
         HBox authorBar = new HBox(authorLabel);
         authorBar.setAlignment(Pos.CENTER);
@@ -136,6 +151,7 @@ public class Gameplay extends Application {
         BorderPane root = new BorderPane();
         root.setTop(topBar);
         root.setCenter(boardCanvas);
+        root.setRight(rightBar);
         root.setBottom(new VBox(backBar, authorBar));
         root.setStyle("-fx-background-color: #f9f9f9;");
         Scene scene = new Scene(root, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
@@ -160,7 +176,15 @@ public class Gameplay extends Application {
         stage.setTitle("Tetris");
         stage.setMinWidth(500);
         stage.show();
+        useExternal = false;
+        String host = "localhost";
+        int port = 3000;
 
+        if (useExternal) {
+            net = new tetris.net.ExternalPlayerClient(host, port);
+            extPlayer = new tetris.players.ExternalPlayer(net);
+            net.connect();
+        }
         resetGameState();
         spawnNewPiece();
 
@@ -189,6 +213,8 @@ public class Gameplay extends Application {
         lastDropTime = 0L;
         dropSpeed = 1_000_000_000L;
         if (scoreLabel != null) scoreLabel.setText("Score: 0");
+        nextType  = randomType();
+        nextColor = randomColor();
     }
 
     //restart method. not used yet. can assign it to a button if needed
@@ -197,26 +223,33 @@ public class Gameplay extends Application {
         spawnNewPiece();
     }
 
-    //spawning a new piece on top
     private void spawnNewPiece() {
-        //get random piece type
-        TetrominoType type = TetrominoType.values()[rng.nextInt(TetrominoType.values().length)];
+        TetrominoType type = nextType;
+        Color color = nextColor;
+        nextType  = randomType();
+        nextColor = randomColor();
         Vec[] base = type.offsets();
-
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
         for (Vec v : base) { if (v.x() < minX) minX = v.x(); if (v.x() > maxX) maxX = v.x(); }
         int shapeWidth = (maxX - minX + 1);
         int startCol = Math.max(0, (width - shapeWidth) / 2 - minX);
 
         current = new ActivePiece(type, new Vec(startCol, 0));
-        currentColor = colourOptions[rng.nextInt(colourOptions.length)];
+        currentColor = color;
 
-        //game over check. if cant spawn a piece at the top
+        // Game-over check
         for (Vec c : current.worldCells()) {
             if (c.y() < 0 || c.y() >= height || c.x() < 0 || c.x() >= width || board.cells()[c.y()][c.x()] != null) {
-                gameOver = true;
-                return;
+                gameOver = true; return;
             }
+        }
+        if (useExternal && extPlayer != null && net != null && net.isConnected()) {
+            extControlsThisPiece = true; // ignore human input while waiting
+            var snap = snapshot();
+            extPlayer.requestMoveAsync(snap,
+                    mv  -> { extControlsThisPiece = false; applyExternalMove(mv); },
+                    err -> { extControlsThisPiece = false; /* optional: show warning; fall back to human */ }
+            );
         }
     }
 
@@ -238,23 +271,10 @@ public class Gameplay extends Application {
     }
 
     //movement methods
-    private void tryMoveLeft()  {
-        if (!paused){
-            move(+ -1, 0);
-        }
-    }
+    private void tryMoveLeft()  { if (!paused && !extControlsThisPiece) move(-1, 0); }
+    private void tryMoveRight() { if (!paused && !extControlsThisPiece) move(+1, 0); }
+    private void tryRotate()    { if (!paused && !extControlsThisPiece) rotator.tryRotateCW(current, board); }
 
-    private void tryMoveRight() {
-        if (!paused){
-            move(+  1, 0);
-        }
-    }
-
-    private void tryRotate() {
-        if (!paused){
-            rotator.tryRotateCW(current, board);
-        }
-    }
 
     private void move(int dx, int dy) {
         current.moveBy(dx, dy);
@@ -327,6 +347,111 @@ public class Gameplay extends Application {
             gc.fillText(hint,  w / 2.0, h / 2.0 + 16);    // slightly below center
             gc.restore();
         }
+        drawNextPreview();
+    }
+
+    private void drawNextPreview() {
+        if (nextCanvas == null) return;
+        GraphicsContext ng = nextCanvas.getGraphicsContext2D();
+        ng.clearRect(0, 0, nextCanvas.getWidth(), nextCanvas.getHeight());
+
+        Vec[] offs = nextType.offsets();
+
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+        for (Vec v : offs) {
+            minX = Math.min(minX, v.x()); maxX = Math.max(maxX, v.x());
+            minY = Math.min(minY, v.y()); maxY = Math.max(maxY, v.y());
+        }
+        int w = (maxX - minX + 1), h = (maxY - minY + 1);
+
+        double boxW = nextCanvas.getWidth(), boxH = nextCanvas.getHeight();
+        double startPx = (boxW - w * cellSize) / 2.0 - minX * cellSize;
+        double startPy = (boxH - h * cellSize) / 2.0 - minY * cellSize;
+
+        ng.setFill(nextColor);
+        ng.setStroke(Color.BLACK);
+        for (Vec v : offs) {
+            double px = startPx + v.x() * cellSize;
+            double py = startPy + v.y() * cellSize;
+            ng.fillRect(px, py, cellSize, cellSize);
+            ng.strokeRect(px, py, cellSize, cellSize);
+        }
+    }
+
+    public void setSeed(long seed) { rng.setSeed(seed); }
+
+    private TetrominoType randomType() {
+        TetrominoType[] vals = TetrominoType.values();
+        return vals[rng.nextInt(vals.length)];
+    }
+    private Color randomColor() {
+        return colourOptions[rng.nextInt(colourOptions.length)];
+    }
+
+    private tetris.dto.PureGame snapshot() {
+        tetris.dto.PureGame p = new tetris.dto.PureGame();
+        p.width = width;
+        p.height = height;
+
+        // Board occupancy
+        p.cells = new int[height][width];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                p.cells[y][x] = (board.cells()[y][x] != null) ? 1 : 0;
+            }
+        }
+
+        // Current piece → normalize worldCells()
+        p.currentShape = toMatrixFromCells(current.worldCells());
+
+        // Next piece → just its canonical offsets (rotation 0)
+        p.nextShape = toMatrixFromCells(java.util.Arrays.asList(nextType.offsets()));
+
+        return p;
+    }
+
+    private int[][] toMatrixFromCells(java.util.Collection<tetris.model.Vec> cells) {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
+
+        for (tetris.model.Vec v : cells) {
+            minX = Math.min(minX, v.x());
+            minY = Math.min(minY, v.y());
+            maxX = Math.max(maxX, v.x());
+            maxY = Math.max(maxY, v.y());
+        }
+
+        int w = maxX - minX + 1;
+        int h = maxY - minY + 1;
+        int[][] m = new int[h][w];
+
+        for (tetris.model.Vec v : cells) {
+            m[v.y() - minY][v.x() - minX] = 1;
+        }
+        return m;
+    }
+
+    private void applyExternalMove(tetris.dto.OpMove mv) {
+        // Rotate CW as many times as requested
+        for (int i = 0; i < mv.opRotate; i++) {
+            rotator.tryRotateCW(current, board);
+        }
+
+        // Align X
+        while (current.origin().x() < mv.opX) move(+1, 0);
+        while (current.origin().x() > mv.opX) move(-1, 0);
+
+        // Drop
+        while (tryBoost()) { /* fall until blocked */ }
+        lockPiece();
+    }
+
+    public void enableExternal(String host, int port) {
+        useExternal = true;
+        net = new tetris.net.ExternalPlayerClient(host, port);
+        extPlayer = new tetris.players.ExternalPlayer(net);
+        net.connect();
     }
 
     public static void main(String[] args) { launch(args); }

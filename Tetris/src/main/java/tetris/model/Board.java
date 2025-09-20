@@ -42,4 +42,12 @@ public class Board {
         for (int y = write; y >= 0; y--) for (int x = 0; x < WIDTH; x++) grid[y][x] = null;
         return cleared;
     }
+
+    public int getWidth() {
+        return WIDTH;
+    }
+
+    public int getHeight() {
+        return HEIGHT;
+    }
 }
