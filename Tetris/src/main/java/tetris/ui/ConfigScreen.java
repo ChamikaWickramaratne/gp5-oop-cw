@@ -62,11 +62,15 @@ public class ConfigScreen extends Application {
 
         // Music
         CheckBox musicCheckBox = new CheckBox("Music");
-        musicCheckBox.setSelected(true);
-        Label musicValue = new Label("On");
-        musicCheckBox.selectedProperty().addListener((obs, oldVal, newVal) ->
-                musicValue.setText(newVal ? "On" : "Off")
-        );
+        musicCheckBox.setSelected(GameSettings.MUSIC_ON);  // use the real value, not hardcoded true
+        Label musicValue = new Label(GameSettings.MUSIC_ON ? "On" : "Off");
+
+        musicCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
+            GameSettings.MUSIC_ON = newVal;
+            musicValue.setText(newVal ? "On" : "Off");
+            GameSettings.save();  // persist to disk
+        });
+
         HBox musicRow = new HBox(10, musicCheckBox, musicValue);
         musicRow.setAlignment(Pos.TOP_LEFT);
 
@@ -74,9 +78,11 @@ public class ConfigScreen extends Application {
         CheckBox soundEffectCheckBox = new CheckBox("Sound Effect");
         soundEffectCheckBox.setSelected(true);
         Label soundValue = new Label("On");
-        soundEffectCheckBox.selectedProperty().addListener((obs, oldVal, newVal) ->
-                soundValue.setText(newVal ? "On" : "Off")
-        );
+        soundEffectCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
+            GameSettings.SOUND_ON = newVal;
+            soundValue.setText(newVal ? "On" : "Off");
+            GameSettings.save();  // persist to disk
+        });
         HBox soundRow = new HBox(10, soundEffectCheckBox, soundValue);
         soundRow.setAlignment(Pos.TOP_LEFT);
 
