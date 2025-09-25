@@ -11,11 +11,18 @@ import javafx.scene.control.Slider;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import tetris.service.Config;
+import tetris.service.ConfigService;
 
 public class ConfigScreen extends Application {
 
+    private final ConfigService configService = new ConfigService();
+    private Config currentConfig;
+
     @Override
     public void start(Stage primaryStage) {
+        // Load config when screen starts
+        currentConfig = configService.loadConfig();
         showConfigScreen(primaryStage);
     }
 
@@ -29,7 +36,7 @@ public class ConfigScreen extends Application {
 
         // Field Width
         Label fieldWidthLabel = new Label("Field Width (No of cells):");
-        Slider fieldWidthSlider = createSlider(5, 15, 10);
+        Slider fieldWidthSlider = createSlider(5, 15, currentConfig.fieldWidth);
         Label fieldWidthValue = new Label(Integer.toString((int) fieldWidthSlider.getValue()));
         fieldWidthSlider.valueProperty().addListener((obs, oldVal, newVal) ->
                 fieldWidthValue.setText(Integer.toString(newVal.intValue()))
@@ -40,7 +47,7 @@ public class ConfigScreen extends Application {
 
         // Field Height
         Label fieldHeightLabel = new Label("Field Height (No of cells):");
-        Slider fieldHeightSlider = createSlider(15, 30, 20);
+        Slider fieldHeightSlider = createSlider(15, 30, currentConfig.fieldHeight);
         Label fieldHeightValue = new Label(Integer.toString((int) fieldHeightSlider.getValue()));
         fieldHeightSlider.valueProperty().addListener((obs, oldVal, newVal) ->
                 fieldHeightValue.setText(Integer.toString(newVal.intValue()))
@@ -49,21 +56,10 @@ public class ConfigScreen extends Application {
         fieldHeightRow.setAlignment(Pos.TOP_LEFT);
         fieldHeightValue.setPadding(new Insets(0, 0, 0, 50));
 
-        // Game Level
-        Label gameLevelLabel = new Label("Game Level:");
-        Slider gameLevelSlider = createSlider(1, 10, 1);
-        Label gameLevelValue = new Label(Integer.toString((int) gameLevelSlider.getValue()));
-        gameLevelSlider.valueProperty().addListener((obs, oldVal, newVal) ->
-                gameLevelValue.setText(Integer.toString(newVal.intValue()))
-        );
-        HBox gameLevelRow = new HBox(10, gameLevelSlider, gameLevelValue);
-        gameLevelRow.setAlignment(Pos.TOP_LEFT);
-        gameLevelValue.setPadding(new Insets(0, 0, 0, 50));
-
         // Music
         CheckBox musicCheckBox = new CheckBox("Music");
-        musicCheckBox.setSelected(true);
-        Label musicValue = new Label("On");
+        musicCheckBox.setSelected(currentConfig.musicOn);
+        Label musicValue = new Label(currentConfig.musicOn ? "On" : "Off");
         musicCheckBox.selectedProperty().addListener((obs, oldVal, newVal) ->
                 musicValue.setText(newVal ? "On" : "Off")
         );
@@ -72,31 +68,25 @@ public class ConfigScreen extends Application {
 
         // Sound Effect
         CheckBox soundEffectCheckBox = new CheckBox("Sound Effect");
-        soundEffectCheckBox.setSelected(true);
-        Label soundValue = new Label("On");
+        soundEffectCheckBox.setSelected(currentConfig.soundOn);
+        Label soundValue = new Label(currentConfig.soundOn ? "On" : "Off");
         soundEffectCheckBox.selectedProperty().addListener((obs, oldVal, newVal) ->
                 soundValue.setText(newVal ? "On" : "Off")
         );
         HBox soundRow = new HBox(10, soundEffectCheckBox, soundValue);
         soundRow.setAlignment(Pos.TOP_LEFT);
 
-        // AI Play
-        CheckBox aiPlayCheckBox = new CheckBox("AI Play");
-        Label aiValue = new Label("Off");
-        aiPlayCheckBox.selectedProperty().addListener((obs, oldVal, newVal) ->
-                aiValue.setText(newVal ? "On" : "Off")
-        );
-        HBox aiRow = new HBox(10, aiPlayCheckBox, aiValue);
-        aiRow.setAlignment(Pos.TOP_LEFT);
-
-        // Extend Mode
-        CheckBox extendModeCheckBox = new CheckBox("Extend Mode");
-        Label extendValue = new Label("Off");
-        extendModeCheckBox.selectedProperty().addListener((obs, oldVal, newVal) ->
-                extendValue.setText(newVal ? "On" : "Off")
-        );
-        HBox extendRow = new HBox(10, extendModeCheckBox, extendValue);
-        extendRow.setAlignment(Pos.TOP_LEFT);
+        // Save Button
+        Button saveButton = new Button("Save");
+        saveButton.setOnAction(e -> {
+            currentConfig = new Config(
+                    (int) fieldWidthSlider.getValue(),
+                    (int) fieldHeightSlider.getValue(),
+                    musicCheckBox.isSelected(),
+                    soundEffectCheckBox.isSelected()
+            );
+            configService.saveConfig(currentConfig);
+        });
 
         // Back Button
         Button backButton = new Button("Back");
@@ -108,7 +98,7 @@ public class ConfigScreen extends Application {
                 ex.printStackTrace();
             }
         });
-        HBox backBox = new HBox(backButton);
+        HBox backBox = new HBox(10, saveButton, backButton);
         backBox.setAlignment(Pos.CENTER);
         backBox.setPadding(new Insets(20, 0, 0, 0));
 
@@ -117,8 +107,7 @@ public class ConfigScreen extends Application {
                 titleBox,
                 fieldWidthLabel, fieldWidthRow,
                 fieldHeightLabel, fieldHeightRow,
-                gameLevelLabel, gameLevelRow,
-                musicRow, soundRow, aiRow, extendRow,
+                musicRow, soundRow,
                 backBox
         );
         layout.setPadding(new Insets(20));

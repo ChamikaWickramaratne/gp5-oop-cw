@@ -8,8 +8,7 @@ import javafx.geometry.VPos;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
+import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -30,7 +29,10 @@ import tetris.model.piece.ActivePiece;
 import tetris.model.rules.RotationStrategy;
 import tetris.model.rules.SrsRotation;
 import tetris.service.ScoreService;
+import tetris.service.HighScoreManager;
+import tetris.service.Score;
 
+import java.util.Optional;
 import java.util.Random;
 
 public class Gameplay extends Application {
@@ -50,7 +52,6 @@ public class Gameplay extends Application {
             Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW
     };
 
-    //collision checker used to check for collisions before rotating and locking blocks in
     interface CollisionChecker {
         boolean blocked(int row, int col);
         int rows();
@@ -59,31 +60,29 @@ public class Gameplay extends Application {
 
     private final Random rng = new Random();
     private Board board = new Board();
-    private ActivePiece current;                 // the active falling piece
-    private Color currentColor;                  // colour for the active piece
-    private final RotationStrategy rotator = new SrsRotation();  // rotation rules
+    private ActivePiece current;
+    private Color currentColor;
+    private final RotationStrategy rotator = new SrsRotation();
     private Label scoreLabel;
     private AnimationTimer timer;
+    private Stage mainStage;   // keep reference for dialogs/screens
 
     @Override
     public void start(Stage stage) {
-        // UI
+        this.mainStage = stage;
+
         scoreLabel = new Label();
         scoreLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
         HBox topBar = new HBox(scoreLabel);
         topBar.setAlignment(Pos.CENTER);
         topBar.setPadding(new Insets(10));
 
-        Canvas boardCanvas = new Canvas(
-                width * cellSize,
-                height * cellSize
-        );
+        Canvas boardCanvas = new Canvas(width * cellSize, height * cellSize);
         boardCanvas.setStyle("-fx-border-color: gray; -fx-border-width: 2px;");
 
         Button backButton = new Button("Back");
         backButton.setOnAction(e -> {
             if (gameOver) {
-                // If game is already over → no alert, just go to main menu
                 if (timer != null) timer.stop();
                 try {
                     new MainMenu().start(stage);
@@ -91,7 +90,6 @@ public class Gameplay extends Application {
                     ex.printStackTrace();
                 }
             } else {
-                // Pause while the dialog is open
                 boolean wasPaused = paused;
                 paused = true;
 
@@ -109,15 +107,14 @@ public class Gameplay extends Application {
                     if (response == yes) {
                         if (timer != null) timer.stop();
                         try {
-                            new MainMenu().start(stage);   // exit gameplay and return to main menu
+                            new MainMenu().start(stage);
                         } catch (Exception ex) {
                             ex.printStackTrace();
                         }
                     } else {
-                        // No → resume gameplay (only if it wasn't already paused before clicking Back)
                         if (!wasPaused) {
                             paused = false;
-                            lastDropTime = 0;  // reset drop timer so it doesn't insta-drop
+                            lastDropTime = 0;
                         }
                     }
                 });
@@ -141,7 +138,6 @@ public class Gameplay extends Application {
         Scene scene = new Scene(root, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
         stage.setScene(scene);
 
-        //controls
         scene.setOnKeyPressed(e -> {
             switch (e.getCode()) {
                 case A -> tryMoveLeft();
@@ -149,10 +145,8 @@ public class Gameplay extends Application {
                 case S -> boost(true);
                 case P -> pauseGame();
                 case W, UP -> tryRotate();
-
             }
         });
-        //stop boost when button released
         scene.setOnKeyReleased(e -> {
             if (e.getCode() == KeyCode.S) boost(false);
         });
@@ -164,7 +158,6 @@ public class Gameplay extends Application {
         resetGameState();
         spawnNewPiece();
 
-        //gameplay timer.
         timer = new AnimationTimer() {
             @Override public void handle(long now) {
                 if (!paused && !gameOver) {
@@ -180,7 +173,6 @@ public class Gameplay extends Application {
         timer.start();
     }
 
-    //start new game
     private void resetGameState() {
         board = new Board();
         score = 0;
@@ -191,15 +183,12 @@ public class Gameplay extends Application {
         if (scoreLabel != null) scoreLabel.setText("Score: 0");
     }
 
-    //restart method. not used yet. can assign it to a button if needed
     private void restartGame() {
         resetGameState();
         spawnNewPiece();
     }
 
-    //spawning a new piece on top
     private void spawnNewPiece() {
-        //get random piece type
         TetrominoType type = TetrominoType.values()[rng.nextInt(TetrominoType.values().length)];
         Vec[] base = type.offsets();
 
@@ -211,16 +200,16 @@ public class Gameplay extends Application {
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = colourOptions[rng.nextInt(colourOptions.length)];
 
-        //game over check. if cant spawn a piece at the top
+        // game over check
         for (Vec c : current.worldCells()) {
             if (c.y() < 0 || c.y() >= height || c.x() < 0 || c.x() >= width || board.cells()[c.y()][c.x()] != null) {
                 gameOver = true;
+                handleGameOver();
                 return;
             }
         }
     }
 
-    //boose piece fall speed
     private boolean tryBoost() {
         current.moveBy(0, +1);
         if (board.canPlace(current)) return true;
@@ -228,7 +217,6 @@ public class Gameplay extends Application {
         return false;
     }
 
-    //lock peice when the hit the bottom
     private void lockPiece() {
         board.lock(current, currentColor);
         int cleared = board.clearLines();
@@ -237,24 +225,9 @@ public class Gameplay extends Application {
         spawnNewPiece();
     }
 
-    //movement methods
-    private void tryMoveLeft()  {
-        if (!paused){
-            move(+ -1, 0);
-        }
-    }
-
-    private void tryMoveRight() {
-        if (!paused){
-            move(+  1, 0);
-        }
-    }
-
-    private void tryRotate() {
-        if (!paused){
-            rotator.tryRotateCW(current, board);
-        }
-    }
+    private void tryMoveLeft()  { if (!paused) move(-1, 0); }
+    private void tryMoveRight() { if (!paused) move(+1, 0); }
+    private void tryRotate()    { if (!paused) rotator.tryRotateCW(current, board); }
 
     private void move(int dx, int dy) {
         current.moveBy(dx, dy);
@@ -267,16 +240,13 @@ public class Gameplay extends Application {
 
     private void pauseGame() {
         paused = !paused;
-        if (!paused)
-            lastDropTime = 0;
+        if (!paused) lastDropTime = 0;
     }
 
-    //drawing the board each time
     private void draw(GraphicsContext gc) {
         int W = width, H = height;
         gc.clearRect(0, 0, W * cellSize, H * cellSize);
 
-        //border color
         gc.setStroke(Color.LIGHTGRAY);
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++)
@@ -304,7 +274,6 @@ public class Gameplay extends Application {
             gc.strokeRect(px, py, cellSize, cellSize);
         }
 
-        // game over / paused overlay
         if (paused || gameOver) {
             double w = W * cellSize, h = H * cellSize;
             gc.save();
@@ -321,13 +290,41 @@ public class Gameplay extends Application {
             String hint  = gameOver ? "Press Back to return" : "Press 'P' to resume";
 
             gc.setFont(Font.font("Arial", FontWeight.BOLD, 36));
-            gc.fillText(title, w / 2.0, h / 2.0 - 18);    // slightly above center
+            gc.fillText(title, w / 2.0, h / 2.0 - 18);
 
             gc.setFont(Font.font("Arial", FontWeight.NORMAL, 18));
-            gc.fillText(hint,  w / 2.0, h / 2.0 + 16);    // slightly below center
+            gc.fillText(hint,  w / 2.0, h / 2.0 + 16);
             gc.restore();
         }
     }
+
+    // new method: handle saving score on game over
+    private void handleGameOver() {
+        if (timer != null) timer.stop();
+        gameOver = true;
+
+        // Run dialog after timer stops to avoid IllegalStateException
+        javafx.application.Platform.runLater(() -> {
+            TextInputDialog dialog = new TextInputDialog("Player");
+            dialog.initOwner(mainStage);
+            dialog.setTitle("Game Over");
+            dialog.setHeaderText("Your Score: " + score);
+            dialog.setContentText("Enter your name:");
+
+            Optional<String> result = dialog.showAndWait();
+            result.ifPresent(name -> {
+                HighScoreManager manager = new HighScoreManager();
+                manager.addScore(new Score(name, score));
+            });
+
+            try {
+                new HighScore().start(mainStage); // show high score screen
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
 
     public static void main(String[] args) { launch(args); }
 }
