@@ -1,0 +1,9 @@
+{
+  "fieldWidth" : 7,
+  "fieldHeight" : 18,
+  "gameLevel" : 1,
+  "music" : true,
+  "soundEffect" : true,
+  "aiPlay" : false,
+  "extendMode" : false
+}
