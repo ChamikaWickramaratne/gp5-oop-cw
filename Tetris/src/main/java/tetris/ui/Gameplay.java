@@ -1,5 +1,6 @@
 package tetris.ui;
 
+
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.geometry.Insets;
@@ -31,6 +32,10 @@ import tetris.service.ScoreService;
 import tetris.service.HighScoreManager;
 import tetris.service.Score;
 
+import javafx.scene.media.Media;
+import javafx.scene.media.MediaPlayer;
+import java.net.URL;
+
 import java.util.Optional;
 import java.util.Random;
 
@@ -46,6 +51,9 @@ public class Gameplay extends Application {
     private boolean paused = false;
     private boolean gameOver = false;
     private int score = 0;
+    private MediaPlayer musicPlayer;
+    private MediaPlayer beepPlayer;
+
 
     //the color options array
     private static final Color[] colourOptions = {
@@ -86,7 +94,74 @@ public class Gameplay extends Application {
         boardCanvas.setStyle("-fx-border-color: gray; -fx-border-width: 2px;");
 
         Button backButton = new Button("Back");
-        backButton.setOnAction(e -> handleBack(stage));
+        backButton.setOnAction(e -> {
+            if (gameOver) {
+                if (timer != null) timer.stop();
+
+                // stop music before leaving
+                if (musicPlayer != null) {
+                    musicPlayer.stop();
+                }
+
+                try {
+                    new MainMenu().start(stage);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            } else {
+                boolean wasPaused = paused;
+                paused = true;
+
+                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                alert.initOwner(stage);
+                alert.setTitle("Leave Game?");
+                alert.setHeaderText("Exit to Main Menu");
+                alert.setContentText("Your current game will be lost. Are you sure?");
+
+                ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
+                ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
+                alert.getButtonTypes().setAll(yes, no);
+
+                alert.showAndWait().ifPresent(response -> {
+                    if (response == yes) {
+                        if (timer != null) timer.stop();
+
+                        // stop music before leaving
+                        if (musicPlayer != null) {
+                            musicPlayer.stop();
+                        }
+
+                        try {
+                            new MainMenu().start(stage);
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                    } else {
+                        if (!wasPaused) {
+                            paused = false;
+                            lastDropTime = 0;
+                        }
+                    }
+                });
+            }
+        });
+        // backButton.setOnAction(e -> handleBack(stage));
+
+        // === Background Music setup ===
+        if (GameSettings.MUSIC_ON) {
+            URL musicUrl = getClass().getResource("/sounds/theme.mp3");
+            if (musicUrl != null) {
+                Media backgroundMusic = new Media(musicUrl.toExternalForm());
+                musicPlayer = new MediaPlayer(backgroundMusic);
+                musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+
+                musicPlayer.setOnReady(() -> {
+                    musicPlayer.play();
+                });
+            }
+        }
+
+
 
         HBox backBar = new HBox(backButton);
         backBar.setAlignment(Pos.CENTER);
@@ -116,6 +191,8 @@ public class Gameplay extends Application {
                 case S -> boost(true);
                 case P -> pauseGame();
                 case W, UP -> tryRotate();
+                case M -> toggleMusic();
+                case N -> toggleSound();
             }
         });
         scene.setOnKeyReleased(e -> {
@@ -143,6 +220,14 @@ public class Gameplay extends Application {
             }
         };
         timer.start();
+
+        URL soundUrl = getClass().getResource("/sounds/beep.mp3");
+        if (soundUrl != null) {
+            Media beep = new Media(soundUrl.toExternalForm());
+            beepPlayer = new MediaPlayer(beep);
+            beepPlayer.setOnEndOfMedia(() -> beepPlayer.stop());  // reset after play
+        }
+
     }
 
     private void handleBack(Stage stage) {
@@ -205,14 +290,21 @@ public class Gameplay extends Application {
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = colourOptions[rng.nextInt(colourOptions.length)];
 
-        // game over check
+        // game over check. if cant spawn a piece at the top
         for (Vec c : current.worldCells()) {
             if (!board.inside(c.x(), c.y()) || board.occupied(c.x(), c.y())) {
                 gameOver = true;
+
+                // stop background music if game is over
+                if (musicPlayer != null) {
+                    musicPlayer.stop();
+                }
+              
                 handleGameOver();
                 return;
             }
         }
+
     }
 
     private boolean tryBoost() {
@@ -222,12 +314,39 @@ public class Gameplay extends Application {
         return false;
     }
 
+    //lock piece when they hit the bottom
     private void lockPiece() {
         board.lock(current, currentColor);
         int cleared = board.clearLines();
         score += ScoreService.pointsFor(cleared);
         if (scoreLabel != null) scoreLabel.setText("Score: " + score);
+
+        if (cleared > 0 && GameSettings.SOUND_ON && beepPlayer != null) {
+            beepPlayer.stop();   // ensure it starts from beginning
+            beepPlayer.play();
+        }
+
+
         spawnNewPiece();
+    }
+
+    //movement methods
+    private void tryMoveLeft()  {
+        if (!paused){
+            move(+ -1, 0);
+        }
+    }
+
+    private void tryMoveRight() {
+        if (!paused){
+            move(+  1, 0);
+        }
+    }
+
+    private void tryRotate() {
+        if (!paused){
+            rotator.tryRotateCW(current, board);
+        }
     }
 
     private void tryMoveLeft()  { if (!paused) move(-1, 0); }
@@ -243,11 +362,24 @@ public class Gameplay extends Application {
         dropSpeed = pressed ? 100_000_000L : 1_000_000_000L / Math.max(1, config.getGameLevel());
     }
 
+
     private void pauseGame() {
         paused = !paused;
-        if (!paused) lastDropTime = 0;
+        if (paused) {
+            // pause background music if it’s playing
+            if (musicPlayer != null && GameSettings.MUSIC_ON) {
+                musicPlayer.pause();
+            }
+        } else {
+            // resume music only if music is enabled
+            if (musicPlayer != null && GameSettings.MUSIC_ON) {
+                musicPlayer.play();
+            }
+            lastDropTime = 0; // reset drop timer so piece doesn’t insta-drop
+        }
     }
 
+    //drawing the board each time
     private void draw(GraphicsContext gc) {
         Color[][] grid = board.cells();
         int H = grid.length;
@@ -306,6 +438,19 @@ public class Gameplay extends Application {
             gc.fillText(hint,  w / 2.0, h / 2.0 + 16);
             gc.restore();
         }
+    }
+  
+    private void toggleMusic() {
+        GameSettings.MUSIC_ON = !GameSettings.MUSIC_ON;
+        if (GameSettings.MUSIC_ON) {
+            musicPlayer.play();
+        } else {
+            musicPlayer.pause();
+        }
+    }
+
+    private void toggleSound() {
+        GameSettings.SOUND_ON = !GameSettings.SOUND_ON;
     }
 
     // new method: handle saving score on game over
