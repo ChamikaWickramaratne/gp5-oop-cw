@@ -18,10 +18,9 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
 
+import tetris.config.ConfigService;
+import tetris.config.TetrisConfig;
 import tetris.model.Board;
 import tetris.model.TetrominoType;
 import tetris.model.Vec;
@@ -37,12 +36,13 @@ import java.util.Random;
 
 public class Gameplay extends Application {
 
-    //constants
+   // Config
+    private final TetrisConfig config = ConfigService.load();
+
+    // constants
     private static final int cellSize = 20;
-    private final int width = 10;
-    private final int height = 20;
     private long lastDropTime = 0L;
-    private long dropSpeed = 1_000_000_000L;
+    private long dropSpeed;
     private boolean paused = false;
     private boolean gameOver = false;
     private int score = 0;
@@ -52,74 +52,41 @@ public class Gameplay extends Application {
             Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW
     };
 
-    interface CollisionChecker {
-        boolean blocked(int row, int col);
-        int rows();
-        int cols();
-    }
-
     private final Random rng = new Random();
-    private Board board = new Board();
-    private ActivePiece current;
-    private Color currentColor;
+    private Board board;                     // now created with config sizes
+    private ActivePiece current;             // the active falling piece
+    private Color currentColor;              // colour for the active piece
     private final RotationStrategy rotator = new SrsRotation();
     private Label scoreLabel;
     private AnimationTimer timer;
-    private Stage mainStage;   // keep reference for dialogs/screens
+    private Stage mainStage;
 
     @Override
     public void start(Stage stage) {
-        this.mainStage = stage;
 
-        scoreLabel = new Label();
+        this.mainStage = stage;
+        
+        // Create board with config size
+        board = new Board(config.getFieldWidth(), config.getFieldHeight());
+
+        // Drop speed depends on init level
+        dropSpeed = 1_000_000_000L / Math.max(1, config.getGameLevel());
+
+        // UI
+        scoreLabel = new Label("Score: 0");
         scoreLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
         HBox topBar = new HBox(scoreLabel);
         topBar.setAlignment(Pos.CENTER);
         topBar.setPadding(new Insets(10));
 
-        Canvas boardCanvas = new Canvas(width * cellSize, height * cellSize);
+        Canvas boardCanvas = new Canvas(
+                board.width() * cellSize,
+                board.height() * cellSize
+        );
         boardCanvas.setStyle("-fx-border-color: gray; -fx-border-width: 2px;");
 
         Button backButton = new Button("Back");
-        backButton.setOnAction(e -> {
-            if (gameOver) {
-                if (timer != null) timer.stop();
-                try {
-                    new MainMenu().start(stage);
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                }
-            } else {
-                boolean wasPaused = paused;
-                paused = true;
-
-                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-                alert.initOwner(stage);
-                alert.setTitle("Leave Game?");
-                alert.setHeaderText("Exit to Main Menu");
-                alert.setContentText("Your current game will be lost. Are you sure?");
-
-                ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
-                ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
-                alert.getButtonTypes().setAll(yes, no);
-
-                alert.showAndWait().ifPresent(response -> {
-                    if (response == yes) {
-                        if (timer != null) timer.stop();
-                        try {
-                            new MainMenu().start(stage);
-                        } catch (Exception ex) {
-                            ex.printStackTrace();
-                        }
-                    } else {
-                        if (!wasPaused) {
-                            paused = false;
-                            lastDropTime = 0;
-                        }
-                    }
-                });
-            }
-        });
+        backButton.setOnAction(e -> handleBack(stage));
 
         HBox backBar = new HBox(backButton);
         backBar.setAlignment(Pos.CENTER);
@@ -135,9 +102,13 @@ public class Gameplay extends Application {
         root.setCenter(boardCanvas);
         root.setBottom(new VBox(backBar, authorBar));
         root.setStyle("-fx-background-color: #f9f9f9;");
-        Scene scene = new Scene(root, UIConfigurations.WINDOW_WIDTH, UIConfigurations.WINDOW_HEIGHT);
+        int sceneWidth  = board.width()  * cellSize + 40;  // +40 for padding/margins
+        int sceneHeight = board.height() * cellSize + 120; // +120 for top/bottom bars
+        Scene scene = new Scene(root, sceneWidth, sceneHeight);
+
         stage.setScene(scene);
 
+        //controls
         scene.setOnKeyPressed(e -> {
             switch (e.getCode()) {
                 case A -> tryMoveLeft();
@@ -158,6 +129,7 @@ public class Gameplay extends Application {
         resetGameState();
         spawnNewPiece();
 
+        //gameplay timer
         timer = new AnimationTimer() {
             @Override public void handle(long now) {
                 if (!paused && !gameOver) {
@@ -173,13 +145,46 @@ public class Gameplay extends Application {
         timer.start();
     }
 
+    private void handleBack(Stage stage) {
+        if (gameOver) {
+            if (timer != null) timer.stop();
+            try { new MainMenu().start(stage); } catch (Exception ex) { ex.printStackTrace(); }
+        } else {
+            boolean wasPaused = paused;
+            paused = true;
+
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.initOwner(stage);
+            alert.setTitle("Leave Game?");
+            alert.setHeaderText("Exit to Main Menu");
+            alert.setContentText("Your current game will be lost. Are you sure?");
+
+            ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
+            ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
+            alert.getButtonTypes().setAll(yes, no);
+
+            alert.showAndWait().ifPresent(response -> {
+                if (response == yes) {
+                    if (timer != null) timer.stop();
+                    try { new MainMenu().start(stage); } catch (Exception ex) { ex.printStackTrace(); }
+                } else {
+                    if (!wasPaused) {
+                        paused = false;
+                        lastDropTime = 0;
+                    }
+                }
+            });
+        }
+    }
+
+    //start new game
     private void resetGameState() {
-        board = new Board();
+        board = new Board(config.getFieldWidth(), config.getFieldHeight());
         score = 0;
         paused = false;
         gameOver = false;
         lastDropTime = 0L;
-        dropSpeed = 1_000_000_000L;
+        dropSpeed = 1_000_000_000L / Math.max(1, config.getGameLevel());
         if (scoreLabel != null) scoreLabel.setText("Score: 0");
     }
 
@@ -195,14 +200,14 @@ public class Gameplay extends Application {
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
         for (Vec v : base) { if (v.x() < minX) minX = v.x(); if (v.x() > maxX) maxX = v.x(); }
         int shapeWidth = (maxX - minX + 1);
-        int startCol = Math.max(0, (width - shapeWidth) / 2 - minX);
+        int startCol = Math.max(0, (board.width() - shapeWidth) / 2 - minX);
 
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = colourOptions[rng.nextInt(colourOptions.length)];
 
         // game over check
         for (Vec c : current.worldCells()) {
-            if (c.y() < 0 || c.y() >= height || c.x() < 0 || c.x() >= width || board.cells()[c.y()][c.x()] != null) {
+            if (!board.inside(c.x(), c.y()) || board.occupied(c.x(), c.y())) {
                 gameOver = true;
                 handleGameOver();
                 return;
@@ -226,7 +231,7 @@ public class Gameplay extends Application {
     }
 
     private void tryMoveLeft()  { if (!paused) move(-1, 0); }
-    private void tryMoveRight() { if (!paused) move(+1, 0); }
+    private void tryMoveRight() { if (!paused) move( 1, 0); }
     private void tryRotate()    { if (!paused) rotator.tryRotateCW(current, board); }
 
     private void move(int dx, int dy) {
@@ -235,7 +240,7 @@ public class Gameplay extends Application {
     }
 
     private void boost(boolean pressed) {
-        dropSpeed = pressed ? 100_000_000L : 1_000_000_000L;
+        dropSpeed = pressed ? 100_000_000L : 1_000_000_000L / Math.max(1, config.getGameLevel());
     }
 
     private void pauseGame() {
@@ -244,9 +249,13 @@ public class Gameplay extends Application {
     }
 
     private void draw(GraphicsContext gc) {
-        int W = width, H = height;
+        Color[][] grid = board.cells();
+        int H = grid.length;
+        int W = grid[0].length;
+
         gc.clearRect(0, 0, W * cellSize, H * cellSize);
 
+        // border color
         gc.setStroke(Color.LIGHTGRAY);
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++)
@@ -255,7 +264,7 @@ public class Gameplay extends Application {
 
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
-                Color cell = board.cells()[y][x];
+                Color cell = grid[y][x];
                 if (cell != null) {
                     double px = x * cellSize, py = y * cellSize;
                     gc.setFill(cell);
@@ -274,6 +283,7 @@ public class Gameplay extends Application {
             gc.strokeRect(px, py, cellSize, cellSize);
         }
 
+        // overlay
         if (paused || gameOver) {
             double w = W * cellSize, h = H * cellSize;
             gc.save();
