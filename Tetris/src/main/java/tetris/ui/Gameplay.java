@@ -28,12 +28,15 @@ import tetris.model.piece.ActivePiece;
 import tetris.model.rules.RotationStrategy;
 import tetris.model.rules.SrsRotation;
 import tetris.service.ScoreService;
+import tetris.service.HighScoreManager;
+import tetris.service.Score;
 
+import java.util.Optional;
 import java.util.Random;
 
 public class Gameplay extends Application {
 
-    // Config
+   // Config
     private final TetrisConfig config = ConfigService.load();
 
     // constants
@@ -56,9 +59,13 @@ public class Gameplay extends Application {
     private final RotationStrategy rotator = new SrsRotation();
     private Label scoreLabel;
     private AnimationTimer timer;
+    private Stage mainStage;
 
     @Override
     public void start(Stage stage) {
+
+        this.mainStage = stage;
+        
         // Create board with config size
         board = new Board(config.getFieldWidth(), config.getFieldHeight());
 
@@ -202,6 +209,7 @@ public class Gameplay extends Application {
         for (Vec c : current.worldCells()) {
             if (!board.inside(c.x(), c.y()) || board.occupied(c.x(), c.y())) {
                 gameOver = true;
+                handleGameOver();
                 return;
             }
         }
@@ -299,6 +307,34 @@ public class Gameplay extends Application {
             gc.restore();
         }
     }
+
+    // new method: handle saving score on game over
+    private void handleGameOver() {
+        if (timer != null) timer.stop();
+        gameOver = true;
+
+        // Run dialog after timer stops to avoid IllegalStateException
+        javafx.application.Platform.runLater(() -> {
+            TextInputDialog dialog = new TextInputDialog("Player");
+            dialog.initOwner(mainStage);
+            dialog.setTitle("Game Over");
+            dialog.setHeaderText("Your Score: " + score);
+            dialog.setContentText("Enter your name:");
+
+            Optional<String> result = dialog.showAndWait();
+            result.ifPresent(name -> {
+                HighScoreManager manager = new HighScoreManager();
+                manager.addScore(new Score(name, score));
+            });
+
+            try {
+                new HighScore().start(mainStage); // show high score screen
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
 
     public static void main(String[] args) { launch(args); }
 }
