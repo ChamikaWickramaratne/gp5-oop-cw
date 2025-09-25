@@ -1,4 +1,3 @@
-// src/main/java/tetris/ui/ConfigScreen.java
 package tetris.ui;
 
 import javafx.application.Application;
@@ -20,13 +19,8 @@ public class ConfigScreen extends Application {
 
     private TetrisConfig config;
 
-    private final ConfigService configService = new ConfigService();
-    private Config currentConfig;
-
     @Override
     public void start(Stage primaryStage) {
-        // Load config when screen starts
-        currentConfig = configService.loadConfig();
         showConfigScreen(primaryStage);
     }
 
