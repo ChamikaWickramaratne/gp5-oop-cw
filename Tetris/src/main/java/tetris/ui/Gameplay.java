@@ -148,7 +148,7 @@ public class Gameplay extends Application {
         // backButton.setOnAction(e -> handleBack(stage));
 
         // === Background Music setup ===
-        if (GameSettings.MUSIC_ON) {
+        if (config.isMusic()) {
             URL musicUrl = getClass().getResource("/sounds/theme.mp3");
             if (musicUrl != null) {
                 Media backgroundMusic = new Media(musicUrl.toExternalForm());
@@ -321,7 +321,7 @@ public class Gameplay extends Application {
         score += ScoreService.pointsFor(cleared);
         if (scoreLabel != null) scoreLabel.setText("Score: " + score);
 
-        if (cleared > 0 && GameSettings.SOUND_ON && beepPlayer != null) {
+        if (cleared > 0 && config.isSoundEffect() && beepPlayer != null) {
             beepPlayer.stop();   // ensure it starts from beginning
             beepPlayer.play();
         }
@@ -349,10 +349,6 @@ public class Gameplay extends Application {
         }
     }
 
-    private void tryMoveLeft()  { if (!paused) move(-1, 0); }
-    private void tryMoveRight() { if (!paused) move( 1, 0); }
-    private void tryRotate()    { if (!paused) rotator.tryRotateCW(current, board); }
-
     private void move(int dx, int dy) {
         current.moveBy(dx, dy);
         if (!board.canPlace(current)) current.moveBy(-dx, -dy);
@@ -367,12 +363,12 @@ public class Gameplay extends Application {
         paused = !paused;
         if (paused) {
             // pause background music if it’s playing
-            if (musicPlayer != null && GameSettings.MUSIC_ON) {
+            if (musicPlayer != null && config.isMusic()) {
                 musicPlayer.pause();
             }
         } else {
             // resume music only if music is enabled
-            if (musicPlayer != null && GameSettings.MUSIC_ON) {
+            if (musicPlayer != null && config.isMusic()) {
                 musicPlayer.play();
             }
             lastDropTime = 0; // reset drop timer so piece doesn’t insta-drop
@@ -441,16 +437,37 @@ public class Gameplay extends Application {
     }
   
     private void toggleMusic() {
-        GameSettings.MUSIC_ON = !GameSettings.MUSIC_ON;
-        if (GameSettings.MUSIC_ON) {
-            musicPlayer.play();
+        boolean newVal = !config.isMusic();
+        config.setMusic(newVal);
+        ConfigService.save(config);
+        if (newVal) {
+            initMusicPlayerIfNeeded();
+            if (musicPlayer != null) {
+                // play immediately if ready; otherwise play when ready
+                musicPlayer.setOnReady(() -> musicPlayer.play());
+                try { musicPlayer.play(); } catch (Exception ignore) { /* onReady fallback */ }
+            }
         } else {
-            musicPlayer.pause();
+            if (musicPlayer != null) musicPlayer.pause();
         }
     }
 
     private void toggleSound() {
-        GameSettings.SOUND_ON = !GameSettings.SOUND_ON;
+        boolean newVal = !config.isSoundEffect();
+        config.setSoundEffect(newVal);
+        ConfigService.save(config);
+    }
+
+    private void initMusicPlayerIfNeeded() {
+        if (musicPlayer != null) return;
+        URL musicUrl = getClass().getResource("/sounds/theme.mp3");
+        if (musicUrl == null) {
+            System.err.println("theme.mp3 not found under /sounds");
+            return;
+        }
+        Media bg = new Media(musicUrl.toExternalForm());
+        musicPlayer = new MediaPlayer(bg);
+        musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
     }
 
     // new method: handle saving score on game over
