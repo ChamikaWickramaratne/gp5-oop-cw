@@ -27,7 +27,10 @@ import tetris.service.ScoreService;
 public class GamePane extends BorderPane {
     // ====== copied/trimmed from Gameplay ======
     private static final int cellSize = 20;
-    private final int width = 10, height = 20;
+
+    // 🔧 Use the actual Board dimensions so clearLines can trigger
+    private final int width  = Board.WIDTH;
+    private final int height = Board.HEIGHT;
 
     private long lastDropTime = 0L;
     private long dropSpeed   = 1_000_000_000L;
@@ -58,6 +61,98 @@ public class GamePane extends BorderPane {
     private tetris.net.INetwork net;
     private tetris.players.Player extPlayer;
     private boolean extControlsThisPiece = false;
+    // GamePane fields
+    private boolean useAI = false;
+    private tetris.players.AIPlayer aiPlayer;
+    private boolean aiAnimating = false;
+
+    private enum AiPhase { ROTATE, SHIFT, DROP }
+    private AiPhase aiPhase;
+    private int aiTargetX = 0;   // interpreted as LEFTMOST column target
+    private int aiRotLeft = 0;
+    private int aiRotateAttempts = 0;
+    private int aiRotateMax = 12;
+
+    public void enableAI(tetris.ai.Heuristic h) {
+        useAI = true;
+        aiPlayer = new tetris.players.AIPlayer(h);
+    }
+
+    public void startGame() {
+        resetGameState();
+        spawnNewPiece();
+        timer = new AnimationTimer() {
+            @Override public void handle(long now) {
+                if (!paused && !gameOver) {
+                    if (lastDropTime == 0) lastDropTime = now;
+                    else if (now - lastDropTime > dropSpeed) {
+                        if (!tryBoost()) lockPiece();
+                        lastDropTime = now;
+                    }
+                }
+                draw(boardCanvas.getGraphicsContext2D());
+            }
+        };
+        timer.start();
+    }
+
+    private void doOneAiStep() {
+        switch (aiPhase) {
+            case ROTATE -> {
+                if (aiRotLeft > 0) {
+                    // try a single CW rotate this tick; if it fails, shimmy toward target once
+                    boolean rotated = tryRotateWithKicks(1);
+                    if (rotated) {
+                        aiRotLeft--;
+                        aiRotateAttempts = 0;
+                    } else {
+                        // shimmy one cell toward target to help wall kicks on next ticks
+                        int left = currentLeft();
+                        int target = clampTargetLeft(aiTargetX);
+                        if (left != target) {
+                            int dir = (target > left) ? +1 : -1;
+                            move(dir, 0); // safe; reverts if blocked
+                        }
+                        if (++aiRotateAttempts >= aiRotateMax) {
+                            // give up rotating; proceed to SHIFT
+                            aiRotLeft = 0;
+                        }
+                    }
+
+                    if (aiRotLeft == 0) {
+                        aiPhase = AiPhase.SHIFT;
+                        aiRotateAttempts = 0;
+                    }
+                    return;
+                }
+
+                aiPhase = AiPhase.SHIFT;
+            }
+
+            case SHIFT -> {
+                // 🔁 Move based on the piece's LEFTMOST x, not origin()
+                int left = currentLeft();
+                int target = clampTargetLeft(aiTargetX);
+
+                if (left == target) {
+                    aiAnimating = false;
+                    extControlsThisPiece = false;
+                    return;
+                }
+                int dir = (target > left) ? +1 : -1;
+                int before = left;
+                move(dir, 0);
+
+                // recompute after move to see if we actually shifted
+                int afterLeft = currentLeft();
+                if (afterLeft == before) {
+                    // blocked horizontally, stop trying; gravity will drop & lock later
+                    aiAnimating = false;
+                    extControlsThisPiece = false;
+                }
+            }
+        }
+    }
 
     public GamePane() {
         // UI
@@ -81,7 +176,6 @@ public class GamePane extends BorderPane {
         setRight(rightBar);
         setStyle("-fx-background-color: #f9f9f9;");
 
-        // start game loop
         resetGameState();
         spawnNewPiece();
 
@@ -89,25 +183,36 @@ public class GamePane extends BorderPane {
             @Override public void handle(long now) {
                 if (!paused && !gameOver) {
                     if (lastDropTime == 0) lastDropTime = now;
-                    else if (now - lastDropTime > dropSpeed) {
-                        if (!tryBoost()) lockPiece();
+
+                    if (now - lastDropTime > dropSpeed) {
+                        if (aiAnimating) {
+                            doOneAiStep();
+                        }
+
+                        boolean fell = tryBoost();
+
+                        if (!fell) {
+                            lockPiece();
+                            aiAnimating = false;
+                            extControlsThisPiece = false;
+                        }
+
                         lastDropTime = now;
                     }
                 }
                 draw(boardCanvas.getGraphicsContext2D());
             }
         };
+
         timer.start();
     }
 
-    // ---------- public controls so parent can map keys ----------
     public void tryMoveLeft()  { if (!paused && !extControlsThisPiece) move(-1, 0); }
     public void tryMoveRight() { if (!paused && !extControlsThisPiece) move(+1, 0); }
     public void tryRotate()    { if (!paused && !extControlsThisPiece) rotator.tryRotateCW(current, board); }
     public void boost(boolean pressed) { dropSpeed = pressed ? 100_000_000L : 1_000_000_000L; }
     public void pauseToggle() { paused = !paused; if (!paused) lastDropTime = 0; }
 
-    // seed / external toggles
     public void setSeed(long seed) { rng.setSeed(seed); }
     public void enableExternal(String host, int port) {
         useExternal = true;
@@ -116,13 +221,11 @@ public class GamePane extends BorderPane {
         net.connect();
     }
 
-    // clean shutdown (call when leaving screen)
     public void dispose() {
         if (timer != null) timer.stop();
         if (net != null) { net.disconnect(); net = null; extPlayer = null; }
     }
 
-    // ---------- internals (copied from Gameplay, trimmed) ----------
     private void resetGameState() {
         board = new Board();
         score = 0; paused = false; gameOver = false;
@@ -151,14 +254,36 @@ public class GamePane extends BorderPane {
             }
         }
 
-        // ask external brain for this piece (optional)
-        if (useExternal && extPlayer != null && net != null) {
+        boolean requested = false;
+
+        if (useExternal && extPlayer != null && net != null && !requested) {
+            requested = true;
             extControlsThisPiece = true;
             var snap = snapshot();
             extPlayer.requestMoveAsync(
                     snap,
                     mv  -> { extControlsThisPiece = false; applyExternalMove(mv); },
-                    err -> { extControlsThisPiece = false; /* fallback silently */ }
+                    err -> { extControlsThisPiece = false; /* fallback to human */ }
+            );
+        }
+        if (useAI && aiPlayer != null && !requested) {
+            requested = true;
+            extControlsThisPiece = true;
+            var snap = snapshot();
+            aiPlayer.requestMoveAsync(
+                    snap,
+                    mv -> {
+                        int r = mv.opRotate & 3;
+                        aiRotLeft = r;
+                        aiTargetX = mv.opX; // store desired LEFTMOST column; we clamp later
+                        aiPhase = AiPhase.ROTATE;
+                        aiAnimating = true;
+                        extControlsThisPiece = true;
+                        lastDropTime = 0L;
+
+                        System.out.println("[AI] plan: rotate=" + aiRotLeft + " targetLeft=" + aiTargetX);
+                    },
+                    err -> { extControlsThisPiece = false; }
             );
         }
     }
@@ -279,39 +404,91 @@ public class GamePane extends BorderPane {
         int w=maxX-minX+1,h=maxY-minY+1; int[][] m=new int[h][w];
         for (Vec v : cells) m[v.y()-minY][v.x()-minX]=1; return m;
     }
+
     private void applyExternalMove(tetris.dto.OpMove mv) {
-        // 1) rotate CW safely
-        int r = mv.opRotate & 3; // 0..3
-        for (int i = 0; i < r; i++) {
-            rotator.tryRotateCW(current, board);
-        }
+        // 0) sanitize inputs
+        final int r = (mv.opRotate & 3); // 0..3
 
-        // 2) clamp target x to a sane range
-        int target = clampTargetX(mv.opX);
+        // 1) Try to perform the requested rotation with tiny horizontal kicks if needed
+        boolean rotated = tryRotateWithKicks(r);
+        // (even if rotation ultimately fails, we continue; the move may still be placeable)
 
-        // 3) step toward target, but bail if we can't move further
+        // 2) Align horizontally by LEFT edge (consistent with AI opX), clamped to fit
+        int target = clampTargetLeft(mv.opX);
         int guard = 0;
-        while (current.origin().x() != target && guard++ < (width * 2)) {
-            int dir = (target > current.origin().x()) ? +1 : -1;
-            int before = current.origin().x();
+        while (currentLeft() != target && guard++ < (width * 2)) {
+            int left = currentLeft();
+            int dir = (target > left) ? +1 : -1;
+            int before = left;
             move(dir, 0);
-            if (current.origin().x() == before) {
-                // stuck (blocked by wall/pile) → stop trying to reach target
-                break;
-            }
+            if (currentLeft() == before) break; // blocked
+            // Optional: try re-rotation after a step to help tight fits
+            if (!rotated) rotated = tryRotateWithKicks(r);
         }
 
-        // 4) hard drop
+        // 3) Hard drop
         while (tryBoost()) { /* fall until blocked */ }
 
-        // 5) lock as usual
+        // 4) Lock
         lockPiece();
     }
 
-    /** Clamp desired x to board range. (Conservative: 0..width-1)  */
+    /** Try CW rotate 'r' times; if fail at spawn/blocked, attempt tiny left/right nudges and retry. */
+    private boolean tryRotateWithKicks(int r) {
+        // no rotation wanted
+        if (r == 0) return true;
+
+        // attempt direct rotations first
+        int applied = 0;
+        for (int i = 0; i < r; i++) {
+            if (rotator.tryRotateCW(current, board)) { applied++; }
+            else break;
+        }
+        if (applied == r) return true;
+
+        // fallback: small horizontal nudges then rotate remaining times
+        int remaining = r - applied;
+        int[] kicks = {+1, -1, +2, -2};
+        for (int k : kicks) {
+            if (!board.tryNudge(current, k, 0)) continue;
+            int ok = 0;
+            for (int i = 0; i < remaining; i++) {
+                if (rotator.tryRotateCW(current, board)) ok++;
+                else break;
+            }
+            if (ok == remaining) return true;
+            // undo nudge if not fully rotated
+            board.tryNudge(current, -k, 0);
+        }
+        return false;
+    }
+
+    // ---- helpers to align by LEFT edge (matches AI opX semantics) ----
+    private int currentLeft() {
+        int min = Integer.MAX_VALUE;
+        for (Vec v : current.worldCells()) if (v.x() < min) min = v.x();
+        return min;
+    }
+    private int currentRight() {
+        int max = Integer.MIN_VALUE;
+        for (Vec v : current.worldCells()) if (v.x() > max) max = v.x();
+        return max;
+    }
+    private int clampTargetLeft(int desiredLeft) {
+        int pieceWidth = currentRight() - currentLeft() + 1;
+        int min = 0;
+        int max = Math.max(0, width - pieceWidth);
+        if (desiredLeft < min) return min;
+        if (desiredLeft > max) return max;
+        return desiredLeft;
+    }
+    // ------------------------------------------------------------------
+
+    /** Conservative clamp; kept for other uses (not used for AI left-edge). */
     private int clampTargetX(int desiredX) {
         if (desiredX < 0) return 0;
         if (desiredX >= width) return width - 1;
         return desiredX;
     }
+
 }

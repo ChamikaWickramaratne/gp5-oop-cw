@@ -72,6 +72,13 @@ public class Gameplay extends Application {
     private tetris.net.INetwork net;
     private tetris.players.Player extPlayer;
     private boolean extControlsThisPiece = false;
+    private boolean useAI = false;
+    private tetris.players.AIPlayer aiPlayer;
+
+    public void enableAI(tetris.ai.Heuristic h) {
+        useAI = true;
+        aiPlayer = new tetris.players.AIPlayer(h);
+    }
 
 
     @Override
@@ -249,6 +256,15 @@ public class Gameplay extends Application {
             extPlayer.requestMoveAsync(snap,
                     mv  -> { extControlsThisPiece = false; applyExternalMove(mv); },
                     err -> { extControlsThisPiece = false; /* optional: show warning; fall back to human */ }
+            );
+        }
+        if (useAI && aiPlayer != null) {
+            extControlsThisPiece = true; // reuse the same “pane is busy” guard
+            var snap = snapshot(); // you already have this
+            aiPlayer.requestMoveAsync(
+                    snap,
+                    mv  -> { extControlsThisPiece = false; applyExternalMove(mv); },
+                    err -> { extControlsThisPiece = false; /* fallback to human */ }
             );
         }
     }

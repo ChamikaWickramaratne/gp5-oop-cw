@@ -31,17 +31,37 @@ public class Board {
         for (Vec c : p.worldCells()) grid[c.y()][c.x()] = color;              // ENHANCED FOR
     }
 
+    // src/main/java/tetris/model/Board.java
+    // src/main/java/tetris/model/Board.java
     public int clearLines() {
         int write = HEIGHT - 1, cleared = 0;
+
+        // Move non-full rows down to `write`
         for (int y = HEIGHT - 1; y >= 0; y--) {
             boolean full = true;
-            for (int x = 0; x < WIDTH; x++) if (grid[y][x] == null) { full = false; break; }
-            if (!full) { if (write != y) System.arraycopy(grid[y], 0, grid[write], 0, WIDTH); write--; }
-            else cleared++;
+            for (int x = 0; x < WIDTH; x++) {
+                if (grid[y][x] == null) { full = false; break; }
+            }
+
+            if (!full) {
+                if (write != y) {
+                    System.arraycopy(grid[y], 0, grid[write], 0, WIDTH);
+                }
+                write--;
+            } else {
+                cleared++;
+            }
         }
-        for (int y = write; y >= 0; y--) for (int x = 0; x < WIDTH; x++) grid[y][x] = null;
+
+        // Clear remaining rows above the last written row
+        for (int y = write; y >= 0; y--) {
+            for (int x = 0; x < WIDTH; x++) grid[y][x] = null;
+        }
         return cleared;
     }
+
+
+
 
     public int getWidth() {
         return WIDTH;

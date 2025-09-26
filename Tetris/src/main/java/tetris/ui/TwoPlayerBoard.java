@@ -14,28 +14,30 @@ import javafx.stage.Stage;
 
 public class TwoPlayerBoard extends Application {
 
-    // Configure external side if you like
+    // Configure players
     private final boolean leftExternal  = false;
-    private final boolean rightExternal = true;
-    private final String  externalHost  = "localhost";
+    private final boolean rightExternal = false;
+    private final boolean rightAI       = true;
+
+    private final String  externalHost  = "127.0.0.1"; // prefer 127.0.0.1 to avoid IPv6 issues
     private final int     externalPort  = 3000;
 
     @Override
     public void start(Stage stage) {
-        // Create two panes
         GamePane left  = new GamePane();
         GamePane right = new GamePane();
 
-        // Shared seed so sequences match
         long seed = System.currentTimeMillis();
         left.setSeed(seed);
         right.setSeed(seed);
 
-        // Enable external brain per side (optional)
+        // Enable exactly one “brain” per side *before* starting
         if (leftExternal)  left.enableExternal(externalHost, externalPort);
+        // Example enabling AI:
+        if (rightAI)       right.enableAI(new tetris.ai.BetterHeuristic());
         if (rightExternal) right.enableExternal(externalHost, externalPort);
 
-        // Layout: side by side, with a top bar
+        // --- UI layout (unchanged) ---
         Button back = new Button("Back");
         back.setOnAction(e -> {
             left.dispose(); right.dispose();
@@ -56,22 +58,20 @@ public class TwoPlayerBoard extends Application {
         Scene scene = new Scene(root, UIConfigurations.WINDOW_WIDTH * 2 + 80, UIConfigurations.WINDOW_HEIGHT + 40);
         stage.setScene(scene);
         stage.setTitle("Tetris — Two Player");
-        back.setFocusTraversable(false);       // don’t let the Back button steal arrow keys
+        back.setFocusTraversable(false);
         root.setFocusTraversable(true);
         stage.show();
         javafx.application.Platform.runLater(root::requestFocus);
 
-        // Key mapping: WASD for left, arrows for right (+ S/DOWN for soft drop)
+        // Key mapping
         scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             switch (e.getCode()) {
-                // Left player
                 case A -> left.tryMoveLeft();
                 case D -> left.tryMoveRight();
                 case W -> left.tryRotate();
                 case S -> left.boost(true);
-                case P -> { left.pauseToggle(); right.pauseToggle(); } // global pause
+                case P -> { left.pauseToggle(); right.pauseToggle(); }
 
-                // Right player
                 case LEFT  -> right.tryMoveLeft();
                 case RIGHT -> right.tryMoveRight();
                 case UP    -> right.tryRotate();
@@ -86,6 +86,10 @@ public class TwoPlayerBoard extends Application {
         });
 
         stage.setOnCloseRequest(ev -> { left.dispose(); right.dispose(); });
+
+        // *** Start after enabling brains so piece #1 is controlled ***
+        left.startGame();
+        right.startGame();
     }
 
     public static void main(String[] args) { launch(args); }
