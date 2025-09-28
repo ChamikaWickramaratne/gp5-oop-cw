@@ -29,8 +29,8 @@ public class GamePane extends BorderPane {
     private static final int cellSize = 20;
 
     // 🔧 Use the actual Board dimensions so clearLines can trigger
-    private final int width  = Board.WIDTH;
-    private final int height = Board.HEIGHT;
+    private final int width  = Board.width();
+    private final int height = Board.height();
 
     private long lastDropTime = 0L;
     private long dropSpeed   = 1_000_000_000L;
