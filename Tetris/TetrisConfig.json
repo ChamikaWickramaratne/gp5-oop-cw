@@ -1,6 +1,6 @@
 {
-  "fieldWidth" : 7,
-  "fieldHeight" : 18,
+  "fieldWidth" : 15,
+  "fieldHeight" : 25,
   "gameLevel" : 1,
   "music" : true,
   "soundEffect" : true,
