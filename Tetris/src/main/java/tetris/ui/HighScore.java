@@ -8,13 +8,8 @@ import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
-import tetris.service.HighScoreManager;
-import tetris.service.Score;
-
-import java.util.List;
 
 public class HighScore extends Application {
-
     public static class ScoreEntry {
         private final String name;
         private final int score;
@@ -33,9 +28,6 @@ public class HighScore extends Application {
         }
     }
 
-    private final HighScoreManager manager = new HighScoreManager();
-    private TableView<ScoreEntry> table;
-
     @Override
     public void start(Stage stage) {
         // Title
@@ -45,7 +37,7 @@ public class HighScore extends Application {
         titleBox.setAlignment(Pos.CENTER);
 
         // Table
-        table = new TableView<>();
+        TableView<ScoreEntry> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
         TableColumn<ScoreEntry, String> nameCol = new TableColumn<>("Name");
@@ -53,42 +45,56 @@ public class HighScore extends Application {
 
         TableColumn<ScoreEntry, Integer> scoreCol = new TableColumn<>("Score");
         scoreCol.setCellValueFactory(new PropertyValueFactory<>("score"));
-        scoreCol.setStyle("-fx-alignment: CENTER;");
+        scoreCol.setStyle("-fx-alignment: CENTER;"); // Center-align score column
 
         table.getColumns().addAll(nameCol, scoreCol);
 
-        refreshTable(); // load existing scores
+        // Dummy data
+        table.getItems().addAll(
+                new ScoreEntry("Tony Stark", 9840),
+                new ScoreEntry("Steve Rogers", 8765),
+                new ScoreEntry("Natasha Romanoff", 8432),
+                new ScoreEntry("Bruce Banner", 7910),
+                new ScoreEntry("Peter Parker", 6823),
+                new ScoreEntry("Wanda Maximoff", 6391),
+                new ScoreEntry("Stephen Strange", 5580),
+                new ScoreEntry("Carol Danvers", 4729),
+                new ScoreEntry("Sam Wilson", 3665),
+                new ScoreEntry("Scott Lang", 2584)
+        );
 
-        // Clear High Scores Button
-        Button clearButton = new Button("Clear High Scores");
-        clearButton.setOnAction(e -> {
-            manager.clear();       // wipe scores.json
-            refreshTable();        // refresh UI
-        });
+        // Remove extra row by resizing table to fit content
+        table.setFixedCellSize(25);
+        table.prefHeightProperty().bind(
+                table.fixedCellSizeProperty().multiply(table.getItems().size()).add(30)
+        );
+        table.setPlaceholder(new Label("")); // No placeholder row
 
         // Back Button
         Button backButton = new Button("Back");
+        HBox backBox = new HBox(backButton);
+        backBox.setAlignment(Pos.CENTER);
+        backBox.setPadding(new Insets(10, 0, 0, 0));
+
+        // Back Button Functionality
         backButton.setOnAction(e -> {
             MainMenu mainView = new MainMenu();
             try {
-                mainView.start(stage);
+                mainView.start(stage);  // Navigate back to Main menu
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
         });
 
-        HBox buttonRow = new HBox(15, clearButton, backButton);
-        buttonRow.setAlignment(Pos.CENTER);
-        buttonRow.setPadding(new Insets(10, 0, 0, 0));
 
-        // Author / Version
+        // Author
         Label authorLabel = new Label("Version : v2.0.0");
         HBox authorBox = new HBox(authorLabel);
         authorBox.setAlignment(Pos.CENTER);
         authorBox.setPadding(new Insets(10, 0, 0, 0));
 
         // Main layout
-        VBox root = new VBox(15, titleBox, table, buttonRow, authorBox);
+        VBox root = new VBox(15, titleBox, table, backBox, authorBox);
         root.setPadding(new Insets(20));
         root.setStyle("-fx-background-color: white;");
 
@@ -96,19 +102,6 @@ public class HighScore extends Application {
         stage.setTitle("Tetris");
         stage.setScene(scene);
         stage.show();
-    }
-
-    private void refreshTable() {
-        table.getItems().clear();
-        List<Score> scores = manager.loadScores();
-        for (Score s : scores) {
-            table.getItems().add(new ScoreEntry(s.playerName, s.points));
-        }
-        table.setFixedCellSize(25);
-        table.prefHeightProperty().bind(
-                table.fixedCellSizeProperty().multiply(table.getItems().size()).add(30)
-        );
-        table.setPlaceholder(new Label(""));
     }
 
     public static void main(String[] args) {
