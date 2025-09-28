@@ -25,12 +25,7 @@ import tetris.model.rules.SrsRotation;
 import tetris.service.ScoreService;
 
 public class GamePane extends BorderPane {
-    // ====== copied/trimmed from Gameplay ======
     private static final int cellSize = 20;
-
-    // 🔧 Use the actual Board dimensions so clearLines can trigger
-    private final int width  = Board.width();
-    private final int height = Board.height();
 
     private long lastDropTime = 0L;
     private long dropSpeed   = 1_000_000_000L;
@@ -43,7 +38,10 @@ public class GamePane extends BorderPane {
     };
 
     private final java.util.Random rng = new java.util.Random();
+
+    // Instance-owned board (no static/global sharing!)
     private Board board = new Board();
+
     private ActivePiece current;
     private Color currentColor;
     private final RotationStrategy rotator = new SrsRotation();
@@ -61,7 +59,8 @@ public class GamePane extends BorderPane {
     private tetris.net.INetwork net;
     private tetris.players.Player extPlayer;
     private boolean extControlsThisPiece = false;
-    // GamePane fields
+
+    // ===== AI integration (optional per pane) =====
     private boolean useAI = false;
     private tetris.players.AIPlayer aiPlayer;
     private boolean aiAnimating = false;
@@ -100,7 +99,6 @@ public class GamePane extends BorderPane {
         switch (aiPhase) {
             case ROTATE -> {
                 if (aiRotLeft > 0) {
-                    // try a single CW rotate this tick; if it fails, shimmy toward target once
                     boolean rotated = tryRotateWithKicks(1);
                     if (rotated) {
                         aiRotLeft--;
@@ -114,8 +112,7 @@ public class GamePane extends BorderPane {
                             move(dir, 0); // safe; reverts if blocked
                         }
                         if (++aiRotateAttempts >= aiRotateMax) {
-                            // give up rotating; proceed to SHIFT
-                            aiRotLeft = 0;
+                            aiRotLeft = 0; // give up rotating; proceed to SHIFT
                         }
                     }
 
@@ -125,12 +122,10 @@ public class GamePane extends BorderPane {
                     }
                     return;
                 }
-
                 aiPhase = AiPhase.SHIFT;
             }
 
             case SHIFT -> {
-                // 🔁 Move based on the piece's LEFTMOST x, not origin()
                 int left = currentLeft();
                 int target = clampTargetLeft(aiTargetX);
 
@@ -162,7 +157,7 @@ public class GamePane extends BorderPane {
         topBar.setAlignment(Pos.CENTER);
         topBar.setPadding(new Insets(10));
 
-        boardCanvas = new Canvas(width * cellSize, height * cellSize);
+        boardCanvas = new Canvas(board.width() * cellSize, board.height() * cellSize);
         boardCanvas.setStyle("-fx-border-color: gray; -fx-border-width: 2px;");
 
         nextCanvas = new Canvas(6 * cellSize, 6 * cellSize);
@@ -227,12 +222,18 @@ public class GamePane extends BorderPane {
     }
 
     private void resetGameState() {
-        board = new Board();
+        board = new Board(); // fresh board for this pane
         score = 0; paused = false; gameOver = false;
         lastDropTime = 0L; dropSpeed = 1_000_000_000L;
         if (scoreLabel != null) scoreLabel.setText("Score: 0");
         nextType  = randomType();
         nextColor = randomColor();
+
+        // keep canvas sized to the board instance
+        if (boardCanvas != null) {
+            boardCanvas.setWidth(board.width() * cellSize);
+            boardCanvas.setHeight(board.height() * cellSize);
+        }
     }
 
     private void spawnNewPiece() {
@@ -243,13 +244,16 @@ public class GamePane extends BorderPane {
         int minX=Integer.MAX_VALUE, maxX=Integer.MIN_VALUE;
         for (Vec v : base) { if (v.x()<minX) minX=v.x(); if (v.x()>maxX) maxX=v.x(); }
         int shapeWidth = (maxX - minX + 1);
-        int startCol = Math.max(0, (width - shapeWidth) / 2 - minX);
+        int startCol = Math.max(0, (board.width() - shapeWidth) / 2 - minX);
 
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = color;
 
+        // game-over check based on instance board
         for (Vec c : current.worldCells()) {
-            if (c.y() < 0 || c.y() >= height || c.x() < 0 || c.x() >= width || board.cells()[c.y()][c.x()] != null) {
+            if (c.y() < 0 || c.y() >= board.height()
+                    || c.x() < 0 || c.x() >= board.width()
+                    || board.cells()[c.y()][c.x()] != null) {
                 gameOver = true; return;
             }
         }
@@ -309,7 +313,7 @@ public class GamePane extends BorderPane {
     }
 
     private void draw(GraphicsContext gc) {
-        int W = width, H = height;
+        int W = board.width(), H = board.height();
         gc.clearRect(0, 0, W * cellSize, H * cellSize);
 
         gc.setStroke(Color.LIGHTGRAY);
@@ -390,9 +394,9 @@ public class GamePane extends BorderPane {
     // ---------- external snapshot & apply ----------
     private tetris.dto.PureGame snapshot() {
         tetris.dto.PureGame p = new tetris.dto.PureGame();
-        p.width = width; p.height = height;
-        p.cells = new int[height][width];
-        for (int y=0;y<height;y++) for (int x=0;x<width;x++)
+        p.width = board.width(); p.height = board.height();
+        p.cells = new int[p.height][p.width];
+        for (int y=0;y<p.height;y++) for (int x=0;x<p.width;x++)
             p.cells[y][x] = (board.cells()[y][x] != null) ? 1 : 0;
         p.currentShape = toMatrixFromCells(current.worldCells());
         p.nextShape    = toMatrixFromCells(java.util.Arrays.asList(nextType.offsets()));
@@ -411,12 +415,11 @@ public class GamePane extends BorderPane {
 
         // 1) Try to perform the requested rotation with tiny horizontal kicks if needed
         boolean rotated = tryRotateWithKicks(r);
-        // (even if rotation ultimately fails, we continue; the move may still be placeable)
 
         // 2) Align horizontally by LEFT edge (consistent with AI opX), clamped to fit
         int target = clampTargetLeft(mv.opX);
         int guard = 0;
-        while (currentLeft() != target && guard++ < (width * 2)) {
+        while (currentLeft() != target && guard++ < (board.width() * 2)) {
             int left = currentLeft();
             int dir = (target > left) ? +1 : -1;
             int before = left;
@@ -435,10 +438,8 @@ public class GamePane extends BorderPane {
 
     /** Try CW rotate 'r' times; if fail at spawn/blocked, attempt tiny left/right nudges and retry. */
     private boolean tryRotateWithKicks(int r) {
-        // no rotation wanted
         if (r == 0) return true;
 
-        // attempt direct rotations first
         int applied = 0;
         for (int i = 0; i < r; i++) {
             if (rotator.tryRotateCW(current, board)) { applied++; }
@@ -446,7 +447,6 @@ public class GamePane extends BorderPane {
         }
         if (applied == r) return true;
 
-        // fallback: small horizontal nudges then rotate remaining times
         int remaining = r - applied;
         int[] kicks = {+1, -1, +2, -2};
         for (int k : kicks) {
@@ -477,18 +477,16 @@ public class GamePane extends BorderPane {
     private int clampTargetLeft(int desiredLeft) {
         int pieceWidth = currentRight() - currentLeft() + 1;
         int min = 0;
-        int max = Math.max(0, width - pieceWidth);
+        int max = Math.max(0, board.width() - pieceWidth);
         if (desiredLeft < min) return min;
         if (desiredLeft > max) return max;
         return desiredLeft;
     }
-    // ------------------------------------------------------------------
 
     /** Conservative clamp; kept for other uses (not used for AI left-edge). */
     private int clampTargetX(int desiredX) {
         if (desiredX < 0) return 0;
-        if (desiredX >= width) return width - 1;
+        if (desiredX >= board.width()) return board.width() - 1;
         return desiredX;
     }
-
 }
