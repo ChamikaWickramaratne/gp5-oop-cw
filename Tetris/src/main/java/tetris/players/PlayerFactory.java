@@ -13,9 +13,9 @@ public class PlayerFactory {
             case HUMAN -> {
                 // nothing to do
             }
-            case EXTERNAL -> {
-                gameplay.enableExternal(host, port); // add helper in step 2
-            }
+//            case EXTERNAL -> {
+//                gameplay.enableExternal(host, port); // add helper in step 2
+//            }
         }
     }
 }
