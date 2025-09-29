@@ -41,6 +41,17 @@ import java.util.Random;
 
 public class Gameplay extends Application {
 
+    // ======== Added for Mockito Testing ========
+    private ScoreService scoreService = new ScoreService();
+
+    public void setScoreService(ScoreService scoreService) {
+        this.scoreService = scoreService;
+    }
+
+    public void addPointsForClearedLines(int lines) {
+        score += scoreService.pointsFor(lines);
+    }
+
     // ======== Config ========
     private final TetrisConfig config = ConfigService.load();
 
@@ -575,7 +586,7 @@ public class Gameplay extends Application {
     private void lockPiece() {
         board.lock(current, currentColor);
         int cleared = board.clearLines();
-        score += ScoreService.pointsFor(cleared);
+        score += scoreService.pointsFor(cleared);
         if (scoreLabel != null) scoreLabel.setText("Score: " + score);
 
         if (cleared > 0 && config.isSoundEffect() && beepPlayer != null) {

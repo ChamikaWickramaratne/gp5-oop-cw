@@ -1,10 +1,15 @@
 package tetris.service;
 
 public final class ScoreService {
-    private ScoreService() {}
+    public ScoreService() {}
 
-    // Linear scoring: 1→100, 2→200, 3→300, 4→400, etc.
     public static int pointsFor(int lines) {
-        return Math.max(lines, 0) * 100;
+        switch (lines) {
+            case 1: return 100;
+            case 2: return 300;
+            case 3: return 600;
+            case 4: return 1000;
+            default: return 0;
+        }
     }
 }
