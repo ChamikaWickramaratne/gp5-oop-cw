@@ -4,10 +4,7 @@ import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.CheckBox;
-import javafx.scene.control.Label;
-import javafx.scene.control.Slider;
+import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -103,27 +100,59 @@ public class ConfigScreen extends Application {
         HBox soundRow = new HBox(10, soundEffectCheckBox, soundValue);
         soundRow.setAlignment(Pos.TOP_LEFT);
 
-        // AI Play
-        CheckBox aiPlayCheckBox = new CheckBox("AI Play");
-        aiPlayCheckBox.setSelected(config.isAiPlay());
-        Label aiValue = new Label(config.isAiPlay() ? "On" : "Off");
-        aiPlayCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
-            aiValue.setText(newVal ? "On" : "Off");
-            config.setAiPlay(newVal);
-        });
-        HBox aiRow = new HBox(10, aiPlayCheckBox, aiValue);
-        aiRow.setAlignment(Pos.TOP_LEFT);
-
-        // Extend Mode
+        // Extend Mode (UI only for now)
         CheckBox extendModeCheckBox = new CheckBox("Extend Mode");
-        extendModeCheckBox.setSelected(config.isExtendMode());
-        Label extendValue = new Label(config.isExtendMode() ? "On" : "Off");
+        extendModeCheckBox.setSelected(config.isExtendMode()); // default from config
+        Label extendValue = new Label(extendModeCheckBox.isSelected() ? "On" : "Off");
+
+        // Update label when changed
         extendModeCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
             extendValue.setText(newVal ? "On" : "Off");
-            config.setExtendMode(newVal);
         });
+
+        // Player 1 Type
+        Label player1Label = new Label("Player 1 Type:");
+        RadioButton p1Human = new RadioButton("Human");
+        RadioButton p1AI = new RadioButton("AI");
+        RadioButton p1External = new RadioButton("External");
+
+        ToggleGroup p1Group = new ToggleGroup();
+        p1Human.setToggleGroup(p1Group);
+        p1AI.setToggleGroup(p1Group);
+        p1External.setToggleGroup(p1Group);
+
+        // default selection
+        p1Human.setSelected(true);
+
+        HBox player1Row = new HBox(10, player1Label, p1Human, p1AI, p1External);
+        player1Row.setAlignment(Pos.TOP_LEFT);
+
+
+        // Player Two radio buttons (Human, AI, External)
+        ToggleGroup player2Group = new ToggleGroup();
+        RadioButton player2Human = new RadioButton("Human");
+        RadioButton player2AI = new RadioButton("AI");
+        RadioButton player2External = new RadioButton("External");
+
+        player2Human.setToggleGroup(player2Group);
+        player2AI.setToggleGroup(player2Group);
+        player2External.setToggleGroup(player2Group);
+
+        // Initially disabled if extend mode is false
+        player2Human.disableProperty().bind(extendModeCheckBox.selectedProperty().not());
+        player2AI.disableProperty().bind(extendModeCheckBox.selectedProperty().not());
+        player2External.disableProperty().bind(extendModeCheckBox.selectedProperty().not());
+
+        // Layout row for Extend Mode
         HBox extendRow = new HBox(10, extendModeCheckBox, extendValue);
         extendRow.setAlignment(Pos.TOP_LEFT);
+
+        // Layout row for Player Two
+        HBox player2Row = new HBox(10, new Label("Player 2 Type:"), player2Human, player2AI, player2External);
+        player2Row.setAlignment(Pos.CENTER_LEFT);
+
+
+
 
         //Back
         Button backButton = new Button("Back");
@@ -148,7 +177,11 @@ public class ConfigScreen extends Application {
                 fieldWidthRow,
                 fieldHeightRow,
                 fieldGameRow,
-                musicRow, soundRow, aiRow, extendRow,
+                musicRow,
+                soundRow,
+                extendRow,
+                player1Row,
+                player2Row,
                 buttonRow
         );
         layout.setPadding(new Insets(20));
@@ -158,6 +191,7 @@ public class ConfigScreen extends Application {
         stage.setScene(configScene);
         stage.setTitle("Configuration");
         stage.show();
+
     }
 
     private Slider createSlider(int min, int max, int value) {
