@@ -1,21 +1,29 @@
 package tetris.controller;
 
-import tetris.model.types.PlayerType;
+import tetris.config.PlayerType;
+import tetris.view.GamePane;
 import tetris.view.Gameplay;
 
-public class PlayerFactory {
-    public static void configureGameplayForType(
-            Gameplay gameplay,
-            PlayerType type,
-            String host, int port
-    ) {
+public final class PlayerFactory {
+    private PlayerFactory() {}
+
+    public static void configureForType(Gameplay gameplay,
+                                        PlayerType type,
+                                        String host, int port) {
         switch (type) {
-            case HUMAN -> {
-                // nothing to do
-            }
-//            case EXTERNAL -> {
-//                gameplay.enableExternal(host, port); // add helper in step 2
-//            }
+            case HUMAN -> {}
+            case AI     -> gameplay.enableAI(new tetris.model.ai.BetterHeuristic());
+            case EXTERNAL -> gameplay.enableExternal(host, port);
+        }
+    }
+
+    public static void configureForType(GamePane pane,
+                                        PlayerType type,
+                                        String host, int port) throws Exception {
+        switch (type) {
+            case HUMAN -> {}
+            case AI     -> pane.enableAI(new tetris.model.ai.BetterHeuristic());
+            case EXTERNAL -> pane.enableExternal(host, port);
         }
     }
 }

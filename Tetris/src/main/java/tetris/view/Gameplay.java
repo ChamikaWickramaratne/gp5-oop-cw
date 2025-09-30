@@ -144,6 +144,29 @@ public class Gameplay extends Application {
         aiPlayer = new AIPlayer(h);
     }
 
+    // in Gameplay (add next to enableAI)
+    public void enableExternal(String host, int port) {
+        useExternal = true;
+        useAI = false;
+
+        net = new ExternalPlayerClient(host, port);
+        extPlayer = new ExternalPlayer(net);
+        try {
+            net.connect();
+            if (!net.isConnected()) throw new IllegalStateException("Not connected");
+            applyAutoBoostIfNeeded();
+        } catch (Exception ex) {
+            extPlayer = null;
+            net = null;
+            showErrorAlert(
+                    "External Player Unavailable",
+                    "Could not connect to the external player at " + host + ":" + port + ".",
+                    ex.getClass().getSimpleName() + (ex.getMessage()!=null?(": "+ex.getMessage()):"")
+            );
+        }
+    }
+
+
     private Stage mainStage;
 
     private void showErrorAlert(String title, String header, String details) {
@@ -168,40 +191,15 @@ public class Gameplay extends Application {
         // Create board with config size
         board = new Board(config.getFieldWidth(), config.getFieldHeight());
 
-        // Drop speed depends on init level
         dropSpeed = baseDropSpeed();
 
-        if (config.isAiPlay()) {
+        PlayerFactory.configureForType(this, config.getPlayer1Type(), "localhost", 3000);
+
+        if (config.isAiPlay() && config.getPlayer1Type() == PlayerType.HUMAN) {
             enableAI(new tetris.model.ai.BetterHeuristic());
-            useExternal = false;
-            applyAutoBoostIfNeeded();   // <= ensure boosted when AI is on
+            applyAutoBoostIfNeeded();
         }
 
-        if (config.getPlayer1Type() == PlayerType.EXTERNAL) {
-            useExternal = true;
-            useAI = false;
-
-            String host = "localhost";
-            int port = 3000;
-
-            net = new ExternalPlayerClient(host, port);
-            extPlayer = new ExternalPlayer(net);
-            try {
-                net.connect();
-                if (!net.isConnected()) throw new IllegalStateException("Not connected");
-                applyAutoBoostIfNeeded();   // <= ensure boosted when External is on
-            } catch (Exception ex) {
-                extPlayer   = null;
-                net         = null;
-                showErrorAlert(
-                        "External Player Unavailable",
-                        "Could not connect to the external player at " + host + ":" + port + ".",
-                        ex.getClass().getSimpleName() + (ex.getMessage()!=null?(": "+ex.getMessage()):"")
-                );
-            }
-        }
-        // Now that useAI/useExternal decisions are made, set the label
-        // UI
         scoreLabel = new Label("Score: 0");
         scoreLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
         HBox topBar = new HBox(scoreLabel);

@@ -19,6 +19,7 @@ import javafx.stage.Stage;
 import tetris.config.ConfigService;
 import tetris.config.TetrisConfig;
 import tetris.config.PlayerType;
+import tetris.controller.PlayerFactory;
 
 import java.net.URL;
 
@@ -146,25 +147,20 @@ public class TwoPlayerBoard extends Application {
 
     private void configureSide(GamePane pane, PlayerType type, Stage stage) {
         try {
-            switch (type) {
-                case HUMAN -> { /* no-op */ }
-                case AI -> {
-                    pane.enableAI(new tetris.model.ai.BetterHeuristic());
-                    // Ensure fast gravity for AI (safe even if GamePane already enforces this)
-                    pane.boost(true);
-                }
-                case EXTERNAL -> pane.enableExternal(externalHost, externalPort);
-            }
+            PlayerFactory.configureForType(pane, type, externalHost, externalPort);
+            // Optional: keep your "ensure fast gravity for AI" line if you like
+            if (type == PlayerType.AI) pane.boost(true);
         } catch (Exception ex) {
-            // Fallback to human and inform user if setup failed
             Alert alert = new Alert(Alert.AlertType.WARNING);
             alert.initOwner(stage);
             alert.setTitle("Player Setup");
             alert.setHeaderText("Could not enable " + type + " for this side");
-            alert.setContentText(ex.getClass().getSimpleName() + (ex.getMessage() != null ? (": " + ex.getMessage()) : ""));
+            alert.setContentText(ex.getClass().getSimpleName() +
+                    (ex.getMessage() != null ? (": " + ex.getMessage()) : ""));
             alert.showAndWait();
         }
     }
+
 
     private void toggleMusic() {
         boolean newVal = !config.isMusic();
