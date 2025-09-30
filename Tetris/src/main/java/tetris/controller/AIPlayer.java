@@ -1,10 +1,10 @@
 // src/main/java/tetris/players/AIPlayer.java
-package tetris.players;
+package tetris.controller;
 
 import javafx.application.Platform;
-import tetris.dto.OpMove;
-import tetris.dto.PureGame;
-import tetris.ai.Heuristic;
+import tetris.model.dto.OpMove;
+import tetris.model.dto.PureGame;
+import tetris.model.ai.Heuristic;
 
 import java.util.concurrent.*;
 

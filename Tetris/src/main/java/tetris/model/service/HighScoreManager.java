@@ -1,4 +1,4 @@
-package tetris.service;
+package tetris.model.service;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

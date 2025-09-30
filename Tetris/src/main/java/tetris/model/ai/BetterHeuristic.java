@@ -1,5 +1,5 @@
 // tetris/ai/BetterHeuristic.java
-package tetris.ai;
+package tetris.model.ai;
 
 public class BetterHeuristic implements Heuristic {
     // Start weights (tune!):

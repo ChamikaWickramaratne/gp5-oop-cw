@@ -1,5 +1,5 @@
-package tetris.net;
-import tetris.dto.OpMove;
+package tetris.controller;
+import tetris.model.dto.OpMove;
 
 public interface NetworkListener {
     void onMoveReceived(OpMove move);

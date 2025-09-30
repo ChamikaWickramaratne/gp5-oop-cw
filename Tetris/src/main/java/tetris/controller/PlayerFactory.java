@@ -1,11 +1,11 @@
-package tetris.players;
+package tetris.controller;
 
-import tetris.net.ExternalPlayerClient;
-import tetris.net.INetwork;
+import tetris.model.types.PlayerType;
+import tetris.view.Gameplay;
 
 public class PlayerFactory {
     public static void configureGameplayForType(
-            tetris.ui.Gameplay gameplay,
+            Gameplay gameplay,
             PlayerType type,
             String host, int port
     ) {

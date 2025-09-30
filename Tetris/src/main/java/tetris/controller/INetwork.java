@@ -1,5 +1,5 @@
-package tetris.net;
-import tetris.dto.PureGame;
+package tetris.controller;
+import tetris.model.dto.PureGame;
 
 public interface INetwork {
     void connect();

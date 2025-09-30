@@ -1,8 +1,8 @@
-package tetris.net;
+package tetris.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import tetris.dto.OpMove;
-import tetris.dto.PureGame;
+import tetris.model.dto.OpMove;
+import tetris.model.dto.PureGame;
 
 import java.io.*;
 import java.net.Socket;

@@ -1,5 +1,5 @@
 // src/main/java/tetris/ui/Gameplay.java
-package tetris.ui;
+package tetris.view;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
@@ -21,18 +21,18 @@ import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
 
 import tetris.config.PlayerType;
-import tetris.dto.OpMove;
 import tetris.config.ConfigService;
 import tetris.config.TetrisConfig;
+import tetris.controller.*;
 import tetris.model.Board;
 import tetris.model.TetrominoType;
 import tetris.model.Vec;
 import tetris.model.piece.ActivePiece;
 import tetris.model.rules.RotationStrategy;
 import tetris.model.rules.SrsRotation;
-import tetris.service.ScoreService;
-import tetris.service.HighScoreManager;
-import tetris.service.Score;
+import tetris.model.service.ScoreService;
+import tetris.model.service.HighScoreManager;
+import tetris.model.service.Score;
 
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
@@ -85,13 +85,13 @@ public class Gameplay extends Application {
 
     // ======== External brain (network) ========
     private boolean useExternal = false;
-    private tetris.net.INetwork net;
-    private tetris.players.Player extPlayer;
+    private INetwork net;
+    private Player extPlayer;
     private boolean extControlsThisPiece = false;
 
     // ======== AI brain (like GamePane, non-blocking) ========
     private boolean useAI = false;
-    private tetris.players.AIPlayer aiPlayer;
+    private AIPlayer aiPlayer;
     private boolean aiAnimating = false;
 
     private enum AiPhase { ROTATE, SHIFT, DROP }
@@ -111,6 +111,26 @@ public class Gameplay extends Application {
     private int extRotLeft = 0;
     private int extRotateAttempts = 0;
     private int extRotateMax = 12;
+    // Gravity helpers
+    private static final long BOOST_NANOS = 100_000_000L;
+    private boolean humanBoosting = false;
+
+    private long baseDropSpeed() {
+        return 1_000_000_000L / Math.max(1, config.getGameLevel());
+    }
+
+    private void applyAutoBoostIfNeeded() {
+        boolean botControlling =
+                (useAI && (aiAnimating || extControlsThisPiece)) ||
+                        (useExternal && extControlsThisPiece);
+
+        if (botControlling) {
+            dropSpeed = BOOST_NANOS;
+        } else {
+            dropSpeed = humanBoosting ? BOOST_NANOS : baseDropSpeed();
+        }
+    }
+
 
     private String currentPlayerType() {
         // Reflects the *actual* control for Player 1 this run
@@ -119,9 +139,9 @@ public class Gameplay extends Application {
         return "Human";
     }
 
-    public void enableAI(tetris.ai.Heuristic h) {
+    public void enableAI(tetris.model.ai.Heuristic h) {
         useAI = true;
-        aiPlayer = new tetris.players.AIPlayer(h);
+        aiPlayer = new AIPlayer(h);
     }
 
     private Stage mainStage;
@@ -137,6 +157,9 @@ public class Gameplay extends Application {
         });
     }
 
+    private boolean humanInputEnabled() {
+        return !useAI && !useExternal && !extControlsThisPiece && !paused && !gameOver;
+    }
 
     @Override
     public void start(Stage stage) {
@@ -146,14 +169,12 @@ public class Gameplay extends Application {
         board = new Board(config.getFieldWidth(), config.getFieldHeight());
 
         // Drop speed depends on init level
-        dropSpeed = 1_000_000_000L / Math.max(1, config.getGameLevel());
+        dropSpeed = baseDropSpeed();
 
         if (config.isAiPlay()) {
-            // you can swap SimpleHeuristic for your BetterHeuristic if you have one
-            enableAI(new tetris.ai.BetterHeuristic());
-            dropSpeed = 100_000_000L;
-            // make sure we don't also control via network at the same time
+            enableAI(new tetris.model.ai.BetterHeuristic());
             useExternal = false;
+            applyAutoBoostIfNeeded();   // <= ensure boosted when AI is on
         }
 
         if (config.getPlayer1Type() == PlayerType.EXTERNAL) {
@@ -163,22 +184,19 @@ public class Gameplay extends Application {
             String host = "localhost";
             int port = 3000;
 
-            net = new tetris.net.ExternalPlayerClient(host, port);
-            extPlayer = new tetris.players.ExternalPlayer(net);
+            net = new ExternalPlayerClient(host, port);
+            extPlayer = new ExternalPlayer(net);
             try {
-                net.connect();  // may throw if server is down / unreachable
-                // If your INetwork exposes isConnected(), keep this guard:
-                if (!net.isConnected()) {
-                    throw new IllegalStateException("Not connected");
-                }
+                net.connect();
+                if (!net.isConnected()) throw new IllegalStateException("Not connected");
+                applyAutoBoostIfNeeded();   // <= ensure boosted when External is on
             } catch (Exception ex) {
-                useExternal = false;      // fall back to local/AI control
                 extPlayer   = null;
                 net         = null;
                 showErrorAlert(
                         "External Player Unavailable",
                         "Could not connect to the external player at " + host + ":" + port + ".",
-                        ex.getClass().getSimpleName() + (ex.getMessage() != null ? (": " + ex.getMessage()) : "")
+                        ex.getClass().getSimpleName() + (ex.getMessage()!=null?(": "+ex.getMessage()):"")
                 );
             }
         }
@@ -312,27 +330,25 @@ public class Gameplay extends Application {
         // Controls
         scene.setOnKeyPressed(e -> {
             switch (e.getCode()) {
-                case A -> {
-                    tryMoveLeft();
-                    playSound("/sounds/move-turn.wav");
-                }
-                case D -> {
-                    tryMoveRight();
-                    playSound("/sounds/move-turn.wav");
-                }
-                case S -> boost(true);
+                // Human-only movement
+                case A -> { if (humanInputEnabled()) { tryMoveLeft();  playSound("/sounds/move-turn.wav"); } }
+                case D -> { if (humanInputEnabled()) { tryMoveRight(); playSound("/sounds/move-turn.wav"); } }
+                case W, UP -> { if (humanInputEnabled()) { tryRotate(); playSound("/sounds/move-turn.wav"); } }
+
+                // Boost: human can toggle; AI ignores (always boosted below)
+                case X -> { if (humanInputEnabled()) boost(true); }
+
+                // Global controls allowed anytime
                 case P -> pauseGame();
-                case W, UP -> {
-                    tryRotate();
-                    playSound("/sounds/move-turn.wav");
-                }
                 case M -> toggleMusic();
-                case N -> toggleSound();
+                case S -> toggleSound();
             }
         });
 
         scene.setOnKeyReleased(e -> {
-            if (e.getCode() == KeyCode.S) boost(false);
+            if (e.getCode() == KeyCode.X && humanInputEnabled()) {
+                boost(false);
+            }
         });
 
 
@@ -345,10 +361,13 @@ public class Gameplay extends Application {
         // Tick loop — now mirrors GamePane: AI micro-steps then gravity
         timer = new AnimationTimer() {
             @Override public void handle(long now) {
+                applyAutoBoostIfNeeded();
                 if (!paused && !gameOver) {
                     if (lastDropTime == 0) lastDropTime = now;
                     else if (now - lastDropTime > dropSpeed) {
-
+                        if (useExternal && (net == null || !net.isConnected()) && !extControlsThisPiece && !extAnimating) {
+                            tryReconnectAndRequestExternal();
+                        }
                         // 1) AI micro-step (never blocks gravity)
                         if (extAnimating) {
                             doOneExternalStep();
@@ -423,7 +442,6 @@ public class Gameplay extends Application {
                 if (left == target) {
                     // finished external plan; let gravity continue
                     extAnimating = false;
-                    extControlsThisPiece = false;
                     return;
                 }
                 int dir = (target > left) ? +1 : -1;
@@ -434,7 +452,6 @@ public class Gameplay extends Application {
                 if (afterLeft == before) {
                     // blocked horizontally; stop trying — gravity will drop and we’ll lock later
                     extAnimating = false;
-                    extControlsThisPiece = false;
                 }
             }
         }
@@ -476,7 +493,6 @@ public class Gameplay extends Application {
                 int target = clampTargetLeft(aiTargetX);
                 if (left == target) {
                     aiAnimating = false;
-                    extControlsThisPiece = false;
                     return;
                 }
                 int dir = (target > left) ? +1 : -1;
@@ -486,13 +502,11 @@ public class Gameplay extends Application {
                 int afterLeft = currentLeft();
                 if (afterLeft == before) {
                     aiAnimating = false;
-                    extControlsThisPiece = false;
                 }
             }
         }
     }
 
-    // ======== Game control helpers ========
     private void tryMoveLeft()  { if (!paused && !extControlsThisPiece) move(-1, 0); }
     private void tryMoveRight() { if (!paused && !extControlsThisPiece) move(+1, 0); }
     private void tryRotate()    { if (!paused && !extControlsThisPiece) rotator.tryRotateCW(current, board); }
@@ -503,8 +517,12 @@ public class Gameplay extends Application {
     }
 
     private void boost(boolean pressed) {
-        dropSpeed = pressed ? 100_000_000L : 1_000_000_000L / Math.max(1, config.getGameLevel());
+        if (useAI || useExternal) return;
+
+        humanBoosting = pressed;
+        applyAutoBoostIfNeeded();
     }
+
 
     private void pauseGame() {
         paused = !paused;
@@ -516,7 +534,6 @@ public class Gameplay extends Application {
         }
     }
 
-    // ======== Game lifecycle ========
     private void resetGameState() {
         board = new Board(config.getFieldWidth(), config.getFieldHeight());
         score = 0;
@@ -527,8 +544,8 @@ public class Gameplay extends Application {
         if (scoreLabel != null) scoreLabel.setText("Score: 0");
         nextType  = randomType();
         nextColor = randomColor();
+        humanBoosting = false;
 
-        // keep canvas sized to board
         if (boardCanvas != null) {
             boardCanvas.setWidth(board.width() * cellSize);
             boardCanvas.setHeight(board.height() * cellSize);
@@ -546,16 +563,24 @@ public class Gameplay extends Application {
         nextType  = randomType();
         nextColor = randomColor();
 
+        extAnimating = false;
+        aiAnimating = false;
+        extRotateAttempts = 0;
+        aiRotateAttempts = 0;
+        boolean requested = false;
+
         Vec[] base = type.offsets();
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
-        for (Vec v : base) { if (v.x() < minX) minX = v.x(); if (v.x() > maxX) maxX = v.x(); }
+        for (Vec v : base) {
+            if (v.x() < minX) minX = v.x();
+            if (v.x() > maxX) maxX = v.x();
+        }
         int shapeWidth = (maxX - minX + 1);
         int startCol = Math.max(0, (board.width() - shapeWidth) / 2 - minX);
 
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = color;
 
-        // Game-over check at spawn
         for (Vec c : current.worldCells()) {
             if (c.y() < 0 || c.y() >= board.height() || c.x() < 0 || c.x() >= board.width()
                     || board.cells()[c.y()][c.x()] != null) {
@@ -566,39 +591,63 @@ public class Gameplay extends Application {
             }
         }
 
-        boolean requested = false;
+        if (useExternal) {
+            try {
+                if (net != null) {
+                    try { net.disconnect(); } catch (Exception ignored) {}
+                }
 
-        // External player (if enabled)
-        if (useExternal && extPlayer != null && net != null && net.isConnected() && !requested) {
-            requested = true;
-            extControlsThisPiece = true; // ignore local input while waiting
-            var snap = snapshot();
-            extPlayer.requestMoveAsync(
-                    snap,
-                    mv -> {
-                        // PLAN (like AI), not immediate apply:
-                        extRotLeft = (mv.opRotate & 3);
-                        extTargetX = mv.opX;                // LEFTMOST target (we clamp during motion)
-                        extPhase   = ExtPhase.ROTATE;
-                        extAnimating = true;
+                String host = "localhost";
+                int port = 3000;
 
-                        // keep pane "owned" by external while animating
-                        extControlsThisPiece = true;
+                net = new ExternalPlayerClient(host, port);
+                net.connect();
+                extPlayer = new ExternalPlayer(net);
 
-                        // reset drop timer so we see the first micro-step quickly
-                        lastDropTime = 0L;
+                if (net.isConnected()) {
+                    requested = true;
+                    extControlsThisPiece = true;
+                    var snap = snapshot();
 
-                        System.out.println("[EXT] plan: rotate=" + extRotLeft + " targetLeft=" + extTargetX);
-                    },
-                    err -> {
-                        extControlsThisPiece = false; // fallback to human
-                        extAnimating = false;
-                        System.err.println("[EXT] request failed: " + err.getMessage());
-                    }
-            );
+                    extPlayer.requestMoveAsync(
+                            snap,
+                            mv -> {
+                                extRotLeft = (mv.opRotate & 3);
+                                extTargetX = mv.opX;
+                                extPhase   = ExtPhase.ROTATE;
+                                extAnimating = true;
+                                applyAutoBoostIfNeeded();
+                                extControlsThisPiece = true;
+                                lastDropTime = 0L;
+
+                                System.out.println("[EXT] plan: rotate=" + extRotLeft + " targetLeft=" + extTargetX);
+                            },
+                            err -> {
+                                System.err.println("[EXT] request failed: " + err.getMessage());
+                                extAnimating = false;
+                                extPlayer = null;
+                                net = null;
+                            }
+                    );
+                } else {
+                    System.err.println("[EXT] Failed to reconnect to external server.");
+                    extAnimating = false;
+                    extPlayer = null;
+                    net = null;
+                }
+            } catch (Exception e) {
+                extAnimating = false;
+                extPlayer = null;
+                net = null;
+                System.err.println("[EXT] Connection error: " + e.getMessage());
+                showErrorAlert(
+                        "External Player Unavailable",
+                        "Failed to reconnect for new piece. External control disabled for this game.",
+                        e.getClass().getSimpleName() + (e.getMessage() != null ? (": " + e.getMessage()) : "")
+                );
+            }
         }
 
-        // AI (if enabled) — plan micro-steps like GamePane
         if (useAI && aiPlayer != null && !requested) {
             requested = true;
             extControlsThisPiece = true;
@@ -608,7 +657,7 @@ public class Gameplay extends Application {
                     mv -> {
                         int r = mv.opRotate & 3;
                         aiRotLeft = r;
-                        aiTargetX = mv.opX; // LEFTMOST target (clamped during motion)
+                        aiTargetX = mv.opX;
                         aiPhase = AiPhase.ROTATE;
                         aiAnimating = true;
                         extControlsThisPiece = true;
@@ -620,6 +669,47 @@ public class Gameplay extends Application {
         }
     }
 
+    private void tryReconnectAndRequestExternal() {
+        if (!useExternal || net != null && net.isConnected()) return;
+
+        try {
+            String host = "localhost";
+            int port = 3000;
+            net = new ExternalPlayerClient(host, port);
+            net.connect();
+            if (net.isConnected()) {
+                extPlayer = new ExternalPlayer(net);
+                System.out.println("[EXT] Reconnected mid-piece. Requesting move...");
+
+                extPlayer.requestMoveAsync(
+                        snapshot(),
+                        mv -> {
+                            extRotLeft = (mv.opRotate & 3);
+                            extTargetX = mv.opX;
+                            extPhase   = ExtPhase.ROTATE;
+                            extAnimating = true;
+                            extControlsThisPiece = true;
+                            applyAutoBoostIfNeeded();
+                            lastDropTime = 0L;
+
+                            System.out.println("[EXT] mid-piece plan: rotate=" + extRotLeft + " targetLeft=" + extTargetX);
+                        },
+                        err -> {
+                            System.err.println("[EXT] mid-piece request failed: " + err.getMessage());
+                            extAnimating = false;
+                            extPlayer = null;
+                            net = null;
+                        }
+                );
+            }
+        } catch (Exception e) {
+            System.err.println("[EXT] mid-piece reconnect error: " + e.getMessage());
+            extPlayer = null;
+            net = null;
+        }
+    }
+
+
     private boolean tryBoost() {
         current.moveBy(0, +1);
         if (board.canPlace(current)) return true;
@@ -627,7 +717,6 @@ public class Gameplay extends Application {
         return false;
     }
 
-    // Lock piece when it can’t fall further
     private void lockPiece() {
         board.lock(current, currentColor);
         int cleared = board.clearLines();
@@ -644,7 +733,6 @@ public class Gameplay extends Application {
         spawnNewPiece();
     }
 
-    // ======== Drawing ========
     private void draw(GraphicsContext gc) {
         Color[][] grid = board.cells();
         int H = grid.length;
@@ -733,7 +821,6 @@ public class Gameplay extends Application {
         }
     }
 
-    // ======== Misc helpers ========
     public void setSeed(long seed) { rng.setSeed(seed); }
 
     private TetrominoType randomType() {
@@ -744,8 +831,8 @@ public class Gameplay extends Application {
         return colourOptions[rng.nextInt(colourOptions.length)];
     }
 
-    private tetris.dto.PureGame snapshot() {
-        tetris.dto.PureGame p = new tetris.dto.PureGame();
+    private tetris.model.dto.PureGame snapshot() {
+        tetris.model.dto.PureGame p = new tetris.model.dto.PureGame();
         p.width = board.width();
         p.height = board.height();
 
@@ -782,14 +869,11 @@ public class Gameplay extends Application {
         return m;
     }
 
-    private void applyExternalMove(tetris.dto.OpMove mv) {
-        // 0) sanitize inputs
+    private void applyExternalMove(tetris.model.dto.OpMove mv) {
         final int r = (mv.opRotate & 3);
 
-        // 1) Try to rotate with tiny kicks
         boolean rotated = tryRotateWithKicks(r);
 
-        // 2) Align by LEFT edge to target (clamped)
         int target = clampTargetLeft(mv.opX);
         int guard = 0;
         while (currentLeft() != target && guard++ < (board.width() * 2)) {
@@ -801,10 +885,8 @@ public class Gameplay extends Application {
             if (!rotated) rotated = tryRotateWithKicks(r);
         }
 
-        // 3) Hard drop
         while (tryBoost()) { /* fall until blocked */ }
 
-        // 4) Lock
         lockPiece();
     }
 
@@ -829,12 +911,11 @@ public class Gameplay extends Application {
                 else break;
             }
             if (ok == remaining) return true;
-            board.tryNudge(current, -k, 0); // undo nudge if not fully rotated
+            board.tryNudge(current, -k, 0);
         }
         return false;
     }
 
-    // Align-by-left-edge helpers (consistent with AI opX semantics)
     private int currentLeft() {
         int min = Integer.MAX_VALUE;
         for (Vec v : current.worldCells()) if (v.x() < min) min = v.x();
@@ -899,12 +980,10 @@ public class Gameplay extends Application {
         }
     }
 
-    // Save score on game over
     private void handleGameOver() {
         if (timer != null) timer.stop();
         gameOver = true;
 
-        // 🔊 Play game over sound
         playSound("/sounds/game-finish.wav");
         javafx.application.Platform.runLater(() -> {
             TextInputDialog dialog = new TextInputDialog("Player");
@@ -916,7 +995,8 @@ public class Gameplay extends Application {
             Optional<String> result = dialog.showAndWait();
             result.ifPresent(name -> {
                 HighScoreManager manager = new HighScoreManager();
-                manager.addScore(new Score(name, score));
+                String type = currentPlayerType(); // "Human", "AI", or "External"
+                manager.addScore(new Score(name, score, type));
             });
 
             try {

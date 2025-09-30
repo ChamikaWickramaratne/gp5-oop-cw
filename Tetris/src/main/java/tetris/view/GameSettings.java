@@ -1,4 +1,4 @@
-package tetris.ui;
+package tetris.view;
 
 import java.util.prefs.Preferences;
 

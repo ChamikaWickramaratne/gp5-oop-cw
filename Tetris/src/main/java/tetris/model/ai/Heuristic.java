@@ -1,5 +1,5 @@
 // tetris/ai/Heuristic.java
-package tetris.ai;
+package tetris.model.ai;
 
 public interface Heuristic {
     // Higher is better

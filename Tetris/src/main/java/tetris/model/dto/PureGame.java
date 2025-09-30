@@ -1,4 +1,4 @@
-package tetris.dto;
+package tetris.model.dto;
 
 // dto/PureGame.java
 public class PureGame {

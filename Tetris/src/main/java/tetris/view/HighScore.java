@@ -1,4 +1,4 @@
-package tetris.ui;
+package tetris.view;
 
 import javafx.application.Application;
 import javafx.geometry.Insets;
@@ -8,8 +8,8 @@ import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
-import tetris.service.HighScoreManager;
-import tetris.service.Score;
+import tetris.model.service.HighScoreManager;
+import tetris.model.service.Score;
 
 import java.util.List;
 
@@ -18,19 +18,17 @@ public class HighScore extends Application {
     public static class ScoreEntry {
         private final String name;
         private final int score;
+        private final String gameType;
 
-        public ScoreEntry(String name, int score) {
+        public ScoreEntry(String name, int score, String gameType) {
             this.name = name;
             this.score = score;
+            this.gameType = gameType;
         }
 
-        public String getName() {
-            return name;
-        }
-
-        public int getScore() {
-            return score;
-        }
+        public String getName() { return name; }
+        public int getScore() { return score; }
+        public String getGameType() { return gameType; }
     }
 
     private final HighScoreManager manager = new HighScoreManager();
@@ -38,13 +36,11 @@ public class HighScore extends Application {
 
     @Override
     public void start(Stage stage) {
-        // Title
-        Label titleLabel = new Label("High Score");
+        Label titleLabel = new Label("High Scores");
         titleLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
         HBox titleBox = new HBox(titleLabel);
         titleBox.setAlignment(Pos.CENTER);
 
-        // Table
         table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
@@ -55,23 +51,23 @@ public class HighScore extends Application {
         scoreCol.setCellValueFactory(new PropertyValueFactory<>("score"));
         scoreCol.setStyle("-fx-alignment: CENTER;");
 
-        table.getColumns().addAll(nameCol, scoreCol);
+        TableColumn<ScoreEntry, String> typeCol = new TableColumn<>("Game Type");
+        typeCol.setCellValueFactory(new PropertyValueFactory<>("gameType"));
+        typeCol.setStyle("-fx-alignment: CENTER;");
 
-        refreshTable(); // load existing scores
+        table.getColumns().addAll(nameCol, scoreCol, typeCol);
+        refreshTable();
 
-        // Clear High Scores Button
         Button clearButton = new Button("Clear High Scores");
         clearButton.setOnAction(e -> {
-            manager.clear();       // wipe scores.json
-            refreshTable();        // refresh UI
+            manager.clear();
+            refreshTable();
         });
 
-        // Back Button
         Button backButton = new Button("Back");
         backButton.setOnAction(e -> {
-            MainMenu mainView = new MainMenu();
             try {
-                mainView.start(stage);
+                new MainMenu().start(stage);
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
@@ -81,13 +77,11 @@ public class HighScore extends Application {
         buttonRow.setAlignment(Pos.CENTER);
         buttonRow.setPadding(new Insets(10, 0, 0, 0));
 
-        // Author / Version
         Label authorLabel = new Label("Version : v2.0.0");
         HBox authorBox = new HBox(authorLabel);
         authorBox.setAlignment(Pos.CENTER);
         authorBox.setPadding(new Insets(10, 0, 0, 0));
 
-        // Main layout
         VBox root = new VBox(15, titleBox, table, buttonRow, authorBox);
         root.setPadding(new Insets(20));
         root.setStyle("-fx-background-color: white;");
@@ -102,7 +96,7 @@ public class HighScore extends Application {
         table.getItems().clear();
         List<Score> scores = manager.loadScores();
         for (Score s : scores) {
-            table.getItems().add(new ScoreEntry(s.playerName, s.points));
+            table.getItems().add(new ScoreEntry(s.getPlayerName(), s.getPoints(), s.getGameType()));
         }
         table.setFixedCellSize(25);
         table.prefHeightProperty().bind(

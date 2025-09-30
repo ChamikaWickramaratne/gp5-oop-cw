@@ -1,6 +1,6 @@
-package tetris.service;
+package tetris.model.service;
 
-import tetris.dto.PureGame;
+import tetris.model.dto.PureGame;
 import tetris.model.Board;
 import tetris.model.TetrominoType;
 import tetris.model.piece.ActivePiece;

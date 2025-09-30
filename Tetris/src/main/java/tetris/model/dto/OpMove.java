@@ -1,4 +1,4 @@
-package tetris.dto;
+package tetris.model.dto;
 
 public class OpMove {
     public int opX;

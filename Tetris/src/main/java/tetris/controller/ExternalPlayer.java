@@ -1,12 +1,10 @@
 // players/ExternalPlayer.java
-package tetris.players;
+package tetris.controller;
 
 import java.util.function.Consumer;
 import javafx.application.Platform;
-import tetris.net.INetwork;
-import tetris.net.NetworkListener;
-import tetris.dto.OpMove;
-import tetris.dto.PureGame;
+import tetris.model.dto.OpMove;
+import tetris.model.dto.PureGame;
 
 public class ExternalPlayer implements Player, NetworkListener {
     private final INetwork net;

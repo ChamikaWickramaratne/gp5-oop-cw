@@ -1,5 +1,5 @@
 // src/main/java/tetris/ui/GamePane.java
-package tetris.ui;
+package tetris.view;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
@@ -25,15 +25,16 @@ import java.util.Optional;
 
 import tetris.config.ConfigService;
 import tetris.config.TetrisConfig;
+import tetris.controller.*;
 import tetris.model.Board;
 import tetris.model.TetrominoType;
 import tetris.model.Vec;
 import tetris.model.piece.ActivePiece;
 import tetris.model.rules.RotationStrategy;
 import tetris.model.rules.SrsRotation;
-import tetris.service.HighScoreManager;
-import tetris.service.Score;
-import tetris.service.ScoreService;
+import tetris.model.service.HighScoreManager;
+import tetris.model.service.Score;
+import tetris.model.service.ScoreService;
 
 public class GamePane extends BorderPane {
     private static final int cellSize = 20;
@@ -72,13 +73,13 @@ public class GamePane extends BorderPane {
 
     // ===== external player integration (optional per pane) =====
     private boolean useExternal = false;
-    private tetris.net.INetwork net;
-    private tetris.players.Player extPlayer;
+    private INetwork net;
+    private Player extPlayer;
     private boolean extControlsThisPiece = false;
 
     // ===== AI integration (optional per pane) =====
     private boolean useAI = false;
-    private tetris.players.AIPlayer aiPlayer;
+    private AIPlayer aiPlayer;
     private boolean aiAnimating = false;
 
     private enum AiPhase { ROTATE, SHIFT, DROP }
@@ -87,10 +88,45 @@ public class GamePane extends BorderPane {
     private int aiRotLeft = 0;
     private int aiRotateAttempts = 0;
     private int aiRotateMax = 12;
+    private static final long BOOST_NANOS = 100_000_000L;
+    // add near other flags
+    private boolean extLateJoinAsked = false;
+    private Label playerTypeLabel;
+    private Label levelLabel;
+    private Label linesLabel;
+    private int linesCleared = 0;
+    private boolean humanBoosting = false;
 
-    public void enableAI(tetris.ai.Heuristic h) {
+    private long baseDropSpeed() {
+        return 1_000_000_000L / Math.max(1, config.getGameLevel());
+    }
+
+    private void applyAutoBoostIfNeeded() {
+        boolean botControlling =
+                (useAI && (aiAnimating || extControlsThisPiece)) ||
+                        (useExternal && extControlsThisPiece);
+
+        if (botControlling) {
+            dropSpeed = BOOST_NANOS;                 // bot control = always boosted
+        } else {
+            dropSpeed = humanBoosting ? BOOST_NANOS  // human holding boost
+                    : baseDropSpeed();
+        }
+    }
+
+
+    public void enableAI(tetris.model.ai.Heuristic h) {
         useAI = true;
-        aiPlayer = new tetris.players.AIPlayer(h);
+        aiPlayer = new AIPlayer(h);
+        applyAutoBoostIfNeeded();
+        if (playerTypeLabel != null) playerTypeLabel.setText("Player: " + currentPlayerType());
+    }
+
+    private String currentPlayerType() {
+        // Reflects the *actual* control for Player 1 this run
+        if (useExternal) return "External";
+        if (useAI) return "AI";
+        return "Human";
     }
 
     public void startGame() {
@@ -98,7 +134,16 @@ public class GamePane extends BorderPane {
         spawnNewPiece();
         timer = new AnimationTimer() {
             @Override public void handle(long now) {
+                applyAutoBoostIfNeeded(); // ✅ keeps gravity boosted if AI/External controls
                 if (!paused && !gameOver) {
+                    if (useExternal
+                            && net != null && net.isConnected()
+                            && current != null && !gameOver
+                            && !extControlsThisPiece
+                            && !aiAnimating
+                            && !extLateJoinAsked) {
+                        requestExternalForCurrent();
+                    }
                     if (lastDropTime == 0) lastDropTime = now;
                     else if (now - lastDropTime > dropSpeed) {
                         if (aiAnimating) {
@@ -131,7 +176,7 @@ public class GamePane extends BorderPane {
                         aiRotLeft--;
                         aiRotateAttempts = 0;
                     } else {
-                        // shimmy one cell toward target to help wall kicks on next ticks
+                        // shimmy one cell toward target to help wall kicks
                         int left = currentLeft();
                         int target = clampTargetLeft(aiTargetX);
                         if (left != target) {
@@ -139,7 +184,7 @@ public class GamePane extends BorderPane {
                             move(dir, 0); // safe; reverts if blocked
                         }
                         if (++aiRotateAttempts >= aiRotateMax) {
-                            aiRotLeft = 0; // give up rotating; proceed to SHIFT
+                            aiRotLeft = 0; // give up rotating
                         }
                     }
 
@@ -156,22 +201,26 @@ public class GamePane extends BorderPane {
                 int left = currentLeft();
                 int target = clampTargetLeft(aiTargetX);
 
+                // ✅ If already aligned, stop shifting and let gravity do the rest
                 if (left == target) {
-                    aiAnimating = false;
-                    extControlsThisPiece = false;
+                    aiPhase = AiPhase.DROP; // move to final drop phase
                     return;
                 }
+
+                // ✅ Only attempt one step per tick toward the target
                 int dir = (target > left) ? +1 : -1;
                 int before = left;
                 move(dir, 0);
 
-                // recompute after move to see if we actually shifted
                 int afterLeft = currentLeft();
                 if (afterLeft == before) {
-                    // blocked horizontally, stop trying; gravity will drop & lock later
-                    aiAnimating = false;
-                    extControlsThisPiece = false;
+                    // blocked horizontally → stop trying
+                    aiPhase = AiPhase.DROP;
                 }
+            }
+
+            case DROP -> {
+                // ✅ Do nothing — gravity (tryBoost) handles this phase
             }
         }
     }
@@ -188,10 +237,49 @@ public class GamePane extends BorderPane {
         boardCanvas.setStyle("-fx-border-color: gray; -fx-border-width: 2px;");
 
         nextCanvas = new Canvas(6 * cellSize, 6 * cellSize);
-        VBox rightBar = new VBox(new Label("Next"), nextCanvas);
+
+// Info labels (match Gameplay)
+        playerTypeLabel = new Label("Player: " + currentPlayerType());
+        playerTypeLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
+
+        levelLabel = new Label("Level: " + config.getGameLevel());
+        levelLabel.setStyle("-fx-font-size: 13px;");
+
+        linesLabel = new Label("Lines: 0");
+        linesLabel.setStyle("-fx-font-size: 13px;");
+
+// Styled info box (same style string you use in Gameplay)
+        VBox infoBox = new VBox(6,
+                new Label("Info"),
+                playerTypeLabel,
+                levelLabel,
+                linesLabel
+        );
+        infoBox.setAlignment(Pos.TOP_CENTER);
+        infoBox.setPadding(new Insets(10));
+        infoBox.setSpacing(6);
+        infoBox.setStyle("""
+    -fx-background-color: #f4f4f4;
+    -fx-border-color: #888;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 5, 0, 0, 1);
+""");
+
+// Final sidebar
+        VBox rightBar = new VBox(
+                new Label("Next"),
+                nextCanvas,
+                new javafx.scene.control.Separator(),
+                infoBox
+        );
         rightBar.setAlignment(Pos.TOP_CENTER);
-        rightBar.setSpacing(6);
+        rightBar.setSpacing(12);
         rightBar.setPadding(new Insets(10));
+        rightBar.setStyle("-fx-background-color: #fafafa;");
+
+        setRight(rightBar);
+
 
         setTop(topBar);
         setCenter(boardCanvas);
@@ -221,7 +309,16 @@ public class GamePane extends BorderPane {
 
         timer = new AnimationTimer() {
             @Override public void handle(long now) {
+                applyAutoBoostIfNeeded();
                 if (!paused && !gameOver) {
+                    if (useExternal
+                            && net != null && net.isConnected()
+                            && current != null && !gameOver
+                            && !extControlsThisPiece
+                            && !aiAnimating
+                            && !extLateJoinAsked) {
+                        requestExternalForCurrent();
+                    }
                     if (lastDropTime == 0) lastDropTime = now;
 
                     if (now - lastDropTime > dropSpeed) {
@@ -247,10 +344,29 @@ public class GamePane extends BorderPane {
         timer.start();
     }
 
-    public void tryMoveLeft()  { if (!paused && !extControlsThisPiece) move(-1, 0); }
-    public void tryMoveRight() { if (!paused && !extControlsThisPiece) move(+1, 0); }
-    public void tryRotate()    { if (!paused && !extControlsThisPiece) rotator.tryRotateCW(current, board); }
-    public void boost(boolean pressed) { dropSpeed = pressed ? 100_000_000L : 1_000_000_000L; }
+    public void tryMoveLeft()  {
+        if (!paused && !extControlsThisPiece) {
+            if (move(-1, 0) && config.isSoundEffect()) playMoveTurn();
+        }
+    }
+    public void tryMoveRight() {
+        if (!paused && !extControlsThisPiece) {
+            if (move(+1, 0) && config.isSoundEffect()) playMoveTurn();
+        }
+    }
+    private void playMoveTurn() { playSound("/sounds/move-turn.wav"); }
+
+    // was: public void tryRotate() { if (!paused && !extControlsThisPiece) rotator.tryRotateCW(current, board); }
+    public void tryRotate() {
+        if (!paused && !extControlsThisPiece) {
+            boolean ok = rotator.tryRotateCW(current, board);
+            if (ok && config.isSoundEffect()) playMoveTurn();
+        }
+    }
+    public void boost(boolean pressed) {
+        humanBoosting = pressed;
+        applyAutoBoostIfNeeded();
+    }
 
     public void pauseToggle() {
         paused = !paused;
@@ -263,11 +379,48 @@ public class GamePane extends BorderPane {
     }
 
     public void setSeed(long seed) { rng.setSeed(seed); }
-    public void enableExternal(String host, int port) {
+
+    public void enableExternal(String host, int port) throws Exception {
         useExternal = true;
-        net = new tetris.net.ExternalPlayerClient(host, port);
-        extPlayer = new tetris.players.ExternalPlayer(net);
-        net.connect();
+        if (playerTypeLabel != null) playerTypeLabel.setText("Player: " + currentPlayerType());
+
+        net = new ExternalPlayerClient(host, port);
+        extPlayer = new ExternalPlayer(net);
+        try {
+            net.connect();
+            if (!net.isConnected()) {
+                throw new IllegalStateException("External player not reachable at " + host + ":" + port);
+            }
+            applyAutoBoostIfNeeded();
+
+            if (current != null && !gameOver) {
+                var snap = snapshot();
+                extPlayer.requestMoveAsync(
+                        snap,
+                        mv -> Platform.runLater(() -> {
+                            aiRotLeft = mv.opRotate & 3;
+                            aiTargetX = mv.opX;
+                            aiPhase = AiPhase.ROTATE;
+                            aiAnimating = true;
+                            extControlsThisPiece = true;
+                            dropSpeed = BOOST_NANOS;
+                            lastDropTime = 0L;
+                            System.out.println("[EXT] plan (late join): rotate=" + aiRotLeft + " targetLeft=" + aiTargetX);
+                            doOneAiStep();
+                        }),
+                        err -> Platform.runLater(() -> {
+                            System.err.println("[EXT] request failed (late join): " + err.getMessage());
+                        })
+                );
+            }
+
+        } catch (Exception e) {
+            if (net != null) {
+                try { net.disconnect(); } catch (Exception ignore) {}
+            }
+            net = null;
+            throw e;
+        }
     }
 
     public void dispose() {
@@ -277,14 +430,18 @@ public class GamePane extends BorderPane {
     }
 
     private void resetGameState() {
-        board = new Board(); // fresh board for this pane
+        linesCleared = 0;
+        if (linesLabel != null) linesLabel.setText("Lines: 0");
+        if (playerTypeLabel != null) playerTypeLabel.setText("Player: " + currentPlayerType());
+        if (levelLabel != null) levelLabel.setText("Level: " + config.getGameLevel());
+
+        board = new Board();
         score = 0; paused = false; gameOver = false;
-        lastDropTime = 0L; dropSpeed = 1_000_000_000L;
+        lastDropTime = 0L; dropSpeed = baseDropSpeed();
         if (scoreLabel != null) scoreLabel.setText("Score: 0");
         nextType  = randomType();
         nextColor = randomColor();
 
-        // keep canvas sized to the board instance
         if (boardCanvas != null) {
             boardCanvas.setWidth(board.width() * cellSize);
             boardCanvas.setHeight(board.height() * cellSize);
@@ -292,22 +449,30 @@ public class GamePane extends BorderPane {
     }
 
     private void spawnNewPiece() {
-        TetrominoType type = nextType; Color color = nextColor;
-        nextType  = randomType(); nextColor = randomColor();
+        TetrominoType type = nextType;
+        Color color = nextColor;
+        nextType  = randomType();
+        nextColor = randomColor();
+
+        aiAnimating = false;
+        extControlsThisPiece = false;
+        aiRotateAttempts = 0;
+        boolean requested = false;
 
         Vec[] base = type.offsets();
-        int minX=Integer.MAX_VALUE, maxX=Integer.MIN_VALUE;
-        for (Vec v : base) { if (v.x()<minX) minX=v.x(); if (v.x()>maxX) maxX=v.x(); }
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        for (Vec v : base) {
+            if (v.x() < minX) minX = v.x();
+            if (v.x() > maxX) maxX = v.x();
+        }
         int shapeWidth = (maxX - minX + 1);
         int startCol = Math.max(0, (board.width() - shapeWidth) / 2 - minX);
 
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = color;
 
-        // game-over check based on instance board
         for (Vec c : current.worldCells()) {
-            if (c.y() < 0 || c.y() >= board.height()
-                    || c.x() < 0 || c.x() >= board.width()
+            if (c.y() < 0 || c.y() >= board.height() || c.x() < 0 || c.x() >= board.width()
                     || board.cells()[c.y()][c.x()] != null) {
                 gameOver = true;
                 if (musicPlayer != null) musicPlayer.stop();
@@ -316,18 +481,51 @@ public class GamePane extends BorderPane {
             }
         }
 
-        boolean requested = false;
+        if (useExternal) {
+            try {
+                if (net != null) {
+                    try { net.disconnect(); } catch (Exception ignored) {}
+                }
 
-        if (useExternal && extPlayer != null && net != null && !requested) {
-            requested = true;
-            extControlsThisPiece = true;
-            var snap = snapshot();
-            extPlayer.requestMoveAsync(
-                    snap,
-                    mv  -> { extControlsThisPiece = false; applyExternalMove(mv); },
-                    err -> { extControlsThisPiece = false; /* fallback to human */ }
-            );
+                String host = "localhost";
+                int port = 3000;
+
+                net = new ExternalPlayerClient(host, port);
+                net.connect();
+                extPlayer = new ExternalPlayer(net);
+
+                if (net.isConnected()) {
+                    requested = true;
+                    applyAutoBoostIfNeeded();
+                    var snap = snapshot();
+
+                    extPlayer.requestMoveAsync(
+                            snap,
+                            mv -> {
+                                int r = mv.opRotate & 3;
+                                aiRotLeft = r;
+                                aiTargetX = mv.opX;
+                                aiPhase = AiPhase.ROTATE;
+                                aiAnimating = true;
+                                extControlsThisPiece = true;
+                                lastDropTime = 0L;
+                                System.out.println("[EXT] plan: rotate=" + aiRotLeft + " targetLeft=" + aiTargetX);
+                            },
+                            err -> {
+                                System.err.println("[EXT] request failed: " + err.getMessage());
+                            }
+                    );
+                } else {
+                    System.err.println("[EXT] Failed to reconnect to external server.");
+                }
+            } catch (Exception e) {
+                useExternal = false;
+                extPlayer = null;
+                net = null;
+                System.err.println("[EXT] Connection error: " + e.getMessage());
+            }
         }
+
         if (useAI && aiPlayer != null && !requested) {
             requested = true;
             extControlsThisPiece = true;
@@ -337,18 +535,20 @@ public class GamePane extends BorderPane {
                     mv -> {
                         int r = mv.opRotate & 3;
                         aiRotLeft = r;
-                        aiTargetX = mv.opX; // store desired LEFTMOST column; we clamp later
+                        aiTargetX = mv.opX;
                         aiPhase = AiPhase.ROTATE;
                         aiAnimating = true;
                         extControlsThisPiece = true;
+                        applyAutoBoostIfNeeded();
                         lastDropTime = 0L;
-
                         System.out.println("[AI] plan: rotate=" + aiRotLeft + " targetLeft=" + aiTargetX);
                     },
                     err -> { extControlsThisPiece = false; }
             );
         }
+        extLateJoinAsked = false;
     }
+
 
     private boolean tryBoost() {
         current.moveBy(0, +1);
@@ -360,6 +560,11 @@ public class GamePane extends BorderPane {
     private void lockPiece() {
         board.lock(current, currentColor);
         int cleared = board.clearLines();
+
+        // NEW: track lines like Gameplay
+        linesCleared += cleared;
+        if (linesLabel != null) linesLabel.setText("Lines: " + linesCleared);
+
         score += ScoreService.pointsFor(cleared);
         if (scoreLabel != null) scoreLabel.setText("Score: " + score);
 
@@ -367,13 +572,21 @@ public class GamePane extends BorderPane {
             beepPlayer.stop();
             beepPlayer.play();
         }
-
+        aiAnimating = false;
+        extControlsThisPiece = false;
+        extLateJoinAsked = false;
         spawnNewPiece();
     }
 
-    private void move(int dx, int dy) {
+
+    private boolean move(int dx, int dy) {
+        int beforeX = currentLeft();
         current.moveBy(dx, dy);
-        if (!board.canPlace(current)) current.moveBy(-dx, -dy);
+        if (!board.canPlace(current)) {
+            current.moveBy(-dx, -dy);
+            return false;
+        }
+        return (dx != 0 || dy != 0) && (currentLeft() != beforeX || dy != 0);
     }
 
     private void draw(GraphicsContext gc) {
@@ -455,9 +668,8 @@ public class GamePane extends BorderPane {
         return colourOptions[rng.nextInt(colourOptions.length)];
     }
 
-    // ---------- external snapshot & apply ----------
-    private tetris.dto.PureGame snapshot() {
-        tetris.dto.PureGame p = new tetris.dto.PureGame();
+    private tetris.model.dto.PureGame snapshot() {
+        tetris.model.dto.PureGame p = new tetris.model.dto.PureGame();
         p.width = board.width(); p.height = board.height();
         p.cells = new int[p.height][p.width];
         for (int y=0;y<p.height;y++) for (int x=0;x<p.width;x++)
@@ -473,34 +685,7 @@ public class GamePane extends BorderPane {
         for (Vec v : cells) m[v.y()-minY][v.x()-minX]=1; return m;
     }
 
-    private void applyExternalMove(tetris.dto.OpMove mv) {
-        // 0) sanitize inputs
-        final int r = (mv.opRotate & 3); // 0..3
 
-        // 1) Try to perform the requested rotation with tiny horizontal kicks if needed
-        boolean rotated = tryRotateWithKicks(r);
-
-        // 2) Align horizontally by LEFT edge (consistent with AI opX), clamped to fit
-        int target = clampTargetLeft(mv.opX);
-        int guard = 0;
-        while (currentLeft() != target && guard++ < (board.width() * 2)) {
-            int left = currentLeft();
-            int dir = (target > left) ? +1 : -1;
-            int before = left;
-            move(dir, 0);
-            if (currentLeft() == before) break; // blocked
-            // Optional: try re-rotation after a step to help tight fits
-            if (!rotated) rotated = tryRotateWithKicks(r);
-        }
-
-        // 3) Hard drop
-        while (tryBoost()) { /* fall until blocked */ }
-
-        // 4) Lock
-        lockPiece();
-    }
-
-    /** Try CW rotate 'r' times; if fail at spawn/blocked, attempt tiny left/right nudges and retry. */
     private boolean tryRotateWithKicks(int r) {
         if (r == 0) return true;
 
@@ -521,13 +706,11 @@ public class GamePane extends BorderPane {
                 else break;
             }
             if (ok == remaining) return true;
-            // undo nudge if not fully rotated
             board.tryNudge(current, -k, 0);
         }
         return false;
     }
 
-    // ---- helpers to align by LEFT edge (matches AI opX semantics) ----
     private int currentLeft() {
         int min = Integer.MAX_VALUE;
         for (Vec v : current.worldCells()) if (v.x() < min) min = v.x();
@@ -547,14 +730,12 @@ public class GamePane extends BorderPane {
         return desiredLeft;
     }
 
-    /** Conservative clamp; kept for other uses (not used for AI left-edge). */
     private int clampTargetX(int desiredX) {
         if (desiredX < 0) return 0;
         if (desiredX >= board.width()) return board.width() - 1;
         return desiredX;
     }
 
-    // ---- audio helpers (for parity with Gameplay) ----
     private void initMusicPlayerIfNeeded() {
         if (musicPlayer != null) return;
         URL musicUrl = getClass().getResource("/sounds/background.mp3");
@@ -579,7 +760,6 @@ public class GamePane extends BorderPane {
         }
     }
 
-    // ---- high score handler (parity with Gameplay) ----
     private void handleGameOver() {
         if (timer != null) timer.stop();
 
@@ -595,10 +775,34 @@ public class GamePane extends BorderPane {
             Optional<String> result = dialog.showAndWait();
             result.ifPresent(name -> {
                 HighScoreManager manager = new HighScoreManager();
-                manager.addScore(new Score(name, score));
+                String type = currentPlayerType(); // "Human", "AI", or "External"
+                manager.addScore(new Score(name, score, type));
             });
-
-            // You can navigate to a HighScore screen here if desired.
         });
     }
+
+    private void requestExternalForCurrent() {
+        if (!useExternal || net == null || !net.isConnected() || current == null || gameOver) return;
+
+        var snap = snapshot();
+        extPlayer.requestMoveAsync(
+                snap,
+                mv -> Platform.runLater(() -> {
+                    aiRotLeft = mv.opRotate & 3;
+                    aiTargetX = mv.opX;
+                    aiPhase = AiPhase.ROTATE;
+                    aiAnimating = true;
+                    extControlsThisPiece = true;
+                    dropSpeed = BOOST_NANOS;
+                    lastDropTime = 0L;
+                    extLateJoinAsked = true;
+                    doOneAiStep();
+                }),
+                err -> Platform.runLater(() -> {
+                    System.err.println("[EXT] late-join request failed: " + err.getMessage());
+                    extLateJoinAsked = false;
+                })
+        );
+    }
+
 }

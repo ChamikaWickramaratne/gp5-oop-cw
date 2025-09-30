@@ -1,4 +1,4 @@
-package tetris.ui;
+package tetris.view;
 
 /**
  * Centralized configuration class for UI settings.
