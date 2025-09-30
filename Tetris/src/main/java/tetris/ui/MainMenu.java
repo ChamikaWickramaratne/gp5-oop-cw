@@ -19,12 +19,13 @@ public class MainMenu extends Application {
 
         // Create buttons
         Button playButton = new Button("Play");
+        Button twoPlayerButton   = new Button("Two Player");
         Button highScoreButton = new Button("High Score");
         Button configButton = new Button("Configurations");
         Button exitButton = new Button("Exit");
 
         // Group buttons into an array for uniform styling
-        Button[] buttons = { playButton, highScoreButton, configButton, exitButton };
+        Button[] buttons = { playButton, twoPlayerButton, highScoreButton, configButton, exitButton };
         for (Button btn : buttons) {
             btn.setPrefWidth(buttonWidth);
             btn.setStyle("-fx-font-size: 14px; -fx-padding: 10px 20px;");
@@ -41,7 +42,13 @@ public class MainMenu extends Application {
                             ex.printStackTrace();
                         }
                         break;
-
+                    case "Two Player":
+                        try {
+                            new TwoPlayerBoard().start(primaryStage); // reuse same Stage
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                        break;
                     case "High Score":
                         try {
                             HighScore highScoreView = new HighScore();
@@ -87,7 +94,7 @@ public class MainMenu extends Application {
         }
 
         // Layout: VBox with spacing and centered alignment
-        VBox root = new VBox(15, playButton, highScoreButton, configButton, exitButton);
+        VBox root = new VBox(15, playButton, twoPlayerButton, highScoreButton, configButton, exitButton);
         root.setStyle("-fx-background-color: white; -fx-padding: 30;");
         root.setAlignment(javafx.geometry.Pos.CENTER);
 
