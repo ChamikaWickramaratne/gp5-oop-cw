@@ -20,6 +20,7 @@ import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
 
+import tetris.config.PlayerType;
 import tetris.dto.OpMove;
 import tetris.config.ConfigService;
 import tetris.config.TetrisConfig;
@@ -77,6 +78,10 @@ public class Gameplay extends Application {
     private Color nextColor;
     private Canvas boardCanvas;
     private Canvas nextCanvas;
+    private Label playerTypeLabel;
+    private Label levelLabel;
+    private Label linesLabel;
+    private int linesCleared = 0;
 
     // ======== External brain (network) ========
     private boolean useExternal = false;
@@ -107,6 +112,12 @@ public class Gameplay extends Application {
     private int extRotateAttempts = 0;
     private int extRotateMax = 12;
 
+    private String currentPlayerType() {
+        // Reflects the *actual* control for Player 1 this run
+        if (useExternal) return "External";
+        if (useAI) return "AI";
+        return "Human";
+    }
 
     public void enableAI(tetris.ai.Heuristic h) {
         useAI = true;
@@ -145,7 +156,7 @@ public class Gameplay extends Application {
             useExternal = false;
         }
 
-        if (config.isExtendMode()) {
+        if (config.getPlayer1Type() == PlayerType.EXTERNAL) {
             useExternal = true;
             useAI = false;
 
@@ -171,7 +182,7 @@ public class Gameplay extends Application {
                 );
             }
         }
-
+        // Now that useAI/useExternal decisions are made, set the label
         // UI
         scoreLabel = new Label("Score: 0");
         scoreLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
@@ -240,11 +251,47 @@ public class Gameplay extends Application {
         backBar.setAlignment(Pos.CENTER);
         backBar.setPadding(new Insets(10));
 
+        // --- Sidebar: create controls FIRST ---
         nextCanvas = new Canvas(6 * cellSize, 6 * cellSize);
-        VBox rightBar = new VBox(new Label("Next"), nextCanvas);
+        playerTypeLabel = new Label("Player: " + currentPlayerType());
+        playerTypeLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
+
+        levelLabel = new Label("Level: " + config.getGameLevel());
+        levelLabel.setStyle("-fx-font-size: 13px;");
+
+        linesLabel = new Label("Lines: 0");
+        linesLabel.setStyle("-fx-font-size: 13px;");
+
+// Wrap the info labels in a styled VBox card
+        VBox infoBox = new VBox(6,
+                new Label("Info"),
+                playerTypeLabel,
+                levelLabel,
+                linesLabel
+        );
+        infoBox.setAlignment(Pos.TOP_CENTER);
+        infoBox.setPadding(new Insets(10));
+        infoBox.setSpacing(6);
+        infoBox.setStyle("""
+    -fx-background-color: #f4f4f4;
+    -fx-border-color: #888;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 5, 0, 0, 1);
+""");
+
+        VBox rightBar = new VBox(
+                new Label("Next"),
+                nextCanvas,
+                new Separator(),
+                infoBox
+        );
         rightBar.setAlignment(Pos.TOP_CENTER);
-        rightBar.setSpacing(6);
+        rightBar.setSpacing(12);
         rightBar.setPadding(new Insets(10));
+        rightBar.setStyle("-fx-background-color: #fafafa;");
+
+
 
         Label authorLabel = new Label("Version : v2.0.0");
         HBox authorBar = new HBox(authorLabel);
@@ -585,6 +632,8 @@ public class Gameplay extends Application {
         board.lock(current, currentColor);
         int cleared = board.clearLines();
         score += ScoreService.pointsFor(cleared);
+        linesCleared += cleared;
+        if (linesLabel != null) linesLabel.setText("Lines: " + linesCleared);
         if (scoreLabel != null) scoreLabel.setText("Score: " + score);
 
         if (cleared > 0 && config.isSoundEffect() && beepPlayer != null) {
