@@ -9,6 +9,8 @@ public class TetrisConfig {
     private boolean soundEffect = true;
     private boolean aiPlay = false;
     private boolean extendMode = false;
+    private PlayerType player1Type = PlayerType.HUMAN;
+    private PlayerType player2Type = PlayerType.HUMAN;
 
     public int getFieldWidth() { return fieldWidth; }
     public void setFieldWidth(int fieldWidth) { this.fieldWidth = fieldWidth; }
@@ -30,5 +32,11 @@ public class TetrisConfig {
 
     public boolean isExtendMode() { return extendMode; }
     public void setExtendMode(boolean extendMode) { this.extendMode = extendMode; }
+
+    public PlayerType getPlayer1Type() { return player1Type; }
+    public void setPlayer1Type(PlayerType player1Type) { this.player1Type = player1Type; }
+
+    public PlayerType getPlayer2Type() { return player2Type; }
+    public void setPlayer2Type(PlayerType player2Type) { this.player2Type = player2Type; }
 }
 

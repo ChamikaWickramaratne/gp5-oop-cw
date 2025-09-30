@@ -2,12 +2,14 @@
 package tetris.ui;
 
 import javafx.animation.AnimationTimer;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.VPos;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -15,13 +17,22 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
+import javafx.scene.media.Media;
+import javafx.scene.media.MediaPlayer;
 
+import java.net.URL;
+import java.util.Optional;
+
+import tetris.config.ConfigService;
+import tetris.config.TetrisConfig;
 import tetris.model.Board;
 import tetris.model.TetrominoType;
 import tetris.model.Vec;
 import tetris.model.piece.ActivePiece;
 import tetris.model.rules.RotationStrategy;
 import tetris.model.rules.SrsRotation;
+import tetris.service.HighScoreManager;
+import tetris.service.Score;
 import tetris.service.ScoreService;
 
 public class GamePane extends BorderPane {
@@ -38,6 +49,11 @@ public class GamePane extends BorderPane {
     };
 
     private final java.util.Random rng = new java.util.Random();
+
+    // Config & Audio
+    private final TetrisConfig config = ConfigService.load();
+    private MediaPlayer musicPlayer;
+    private MediaPlayer beepPlayer;
 
     // Instance-owned board (no static/global sharing!)
     private Board board = new Board();
@@ -85,7 +101,18 @@ public class GamePane extends BorderPane {
                 if (!paused && !gameOver) {
                     if (lastDropTime == 0) lastDropTime = now;
                     else if (now - lastDropTime > dropSpeed) {
-                        if (!tryBoost()) lockPiece();
+                        if (aiAnimating) {
+                            doOneAiStep();
+                        }
+
+                        boolean fell = tryBoost();
+
+                        if (!fell) {
+                            lockPiece();
+                            aiAnimating = false;
+                            extControlsThisPiece = false;
+                        }
+
                         lastDropTime = now;
                     }
                 }
@@ -171,6 +198,24 @@ public class GamePane extends BorderPane {
         setRight(rightBar);
         setStyle("-fx-background-color: #f9f9f9;");
 
+        // ---- Audio setup (music + beep) ----
+        if (config.isMusic()) {
+            URL musicUrl = getClass().getResource("/sounds/background.mp3");
+            if (musicUrl != null) {
+                Media backgroundMusic = new Media(musicUrl.toExternalForm());
+                musicPlayer = new MediaPlayer(backgroundMusic);
+                musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+                musicPlayer.setOnReady(() -> musicPlayer.play());
+            }
+        }
+
+        URL soundUrl = getClass().getResource("/sounds/erase-line.wav");
+        if (soundUrl != null) {
+            Media beep = new Media(soundUrl.toExternalForm());
+            beepPlayer = new MediaPlayer(beep);
+            beepPlayer.setOnEndOfMedia(() -> beepPlayer.stop());
+        }
+
         resetGameState();
         spawnNewPiece();
 
@@ -206,7 +251,16 @@ public class GamePane extends BorderPane {
     public void tryMoveRight() { if (!paused && !extControlsThisPiece) move(+1, 0); }
     public void tryRotate()    { if (!paused && !extControlsThisPiece) rotator.tryRotateCW(current, board); }
     public void boost(boolean pressed) { dropSpeed = pressed ? 100_000_000L : 1_000_000_000L; }
-    public void pauseToggle() { paused = !paused; if (!paused) lastDropTime = 0; }
+
+    public void pauseToggle() {
+        paused = !paused;
+        if (!paused) {
+            lastDropTime = 0;
+            if (musicPlayer != null && config.isMusic()) musicPlayer.play();
+        } else {
+            if (musicPlayer != null && config.isMusic()) musicPlayer.pause();
+        }
+    }
 
     public void setSeed(long seed) { rng.setSeed(seed); }
     public void enableExternal(String host, int port) {
@@ -218,6 +272,7 @@ public class GamePane extends BorderPane {
 
     public void dispose() {
         if (timer != null) timer.stop();
+        if (musicPlayer != null) { musicPlayer.stop(); musicPlayer.dispose(); musicPlayer = null; }
         if (net != null) { net.disconnect(); net = null; extPlayer = null; }
     }
 
@@ -254,7 +309,10 @@ public class GamePane extends BorderPane {
             if (c.y() < 0 || c.y() >= board.height()
                     || c.x() < 0 || c.x() >= board.width()
                     || board.cells()[c.y()][c.x()] != null) {
-                gameOver = true; return;
+                gameOver = true;
+                if (musicPlayer != null) musicPlayer.stop();
+                handleGameOver();
+                return;
             }
         }
 
@@ -304,6 +362,12 @@ public class GamePane extends BorderPane {
         int cleared = board.clearLines();
         score += ScoreService.pointsFor(cleared);
         if (scoreLabel != null) scoreLabel.setText("Score: " + score);
+
+        if (cleared > 0 && config.isSoundEffect() && beepPlayer != null) {
+            beepPlayer.stop();
+            beepPlayer.play();
+        }
+
         spawnNewPiece();
     }
 
@@ -344,7 +408,7 @@ public class GamePane extends BorderPane {
             gc.setTextAlign(TextAlignment.CENTER); gc.setTextBaseline(VPos.CENTER);
             String title = gameOver ? "Game Over" : "PAUSED";
             String hint  = gameOver ? "Press Back" : "Press 'P'";
-            gc.setFont(javafx.scene.text.Font.font("Arial", FontWeight.BOLD, 36));
+            gc.setFont(Font.font("Arial", FontWeight.BOLD, 36));
             gc.fillText(title, w/2.0, h/2.0 - 18);
             gc.setFont(Font.font("Arial", FontWeight.NORMAL, 18));
             gc.fillText(hint,  w/2.0, h/2.0 + 16);
@@ -488,5 +552,53 @@ public class GamePane extends BorderPane {
         if (desiredX < 0) return 0;
         if (desiredX >= board.width()) return board.width() - 1;
         return desiredX;
+    }
+
+    // ---- audio helpers (for parity with Gameplay) ----
+    private void initMusicPlayerIfNeeded() {
+        if (musicPlayer != null) return;
+        URL musicUrl = getClass().getResource("/sounds/background.mp3");
+        if (musicUrl == null) {
+            System.err.println("background.mp3 not found under /sounds");
+            return;
+        }
+        Media bg = new Media(musicUrl.toExternalForm());
+        musicPlayer = new MediaPlayer(bg);
+        musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+    }
+
+    private void playSound(String resource) {
+        if (config.isSoundEffect()) {
+            URL soundUrl = getClass().getResource(resource);
+            if (soundUrl != null) {
+                Media media = new Media(soundUrl.toExternalForm());
+                MediaPlayer player = new MediaPlayer(media);
+                player.setOnEndOfMedia(player::dispose);
+                player.play();
+            }
+        }
+    }
+
+    // ---- high score handler (parity with Gameplay) ----
+    private void handleGameOver() {
+        if (timer != null) timer.stop();
+
+        // optional finish sound
+        playSound("/sounds/game-finish.wav");
+
+        Platform.runLater(() -> {
+            TextInputDialog dialog = new TextInputDialog("Player");
+            dialog.setTitle("Game Over");
+            dialog.setHeaderText("Your Score: " + score);
+            dialog.setContentText("Enter your name:");
+
+            Optional<String> result = dialog.showAndWait();
+            result.ifPresent(name -> {
+                HighScoreManager manager = new HighScoreManager();
+                manager.addScore(new Score(name, score));
+            });
+
+            // You can navigate to a HighScore screen here if desired.
+        });
     }
 }
