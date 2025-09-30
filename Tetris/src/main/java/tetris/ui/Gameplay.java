@@ -227,7 +227,7 @@ public class Gameplay extends Application {
 
         // Background Music
         if (config.isMusic()) {
-            URL musicUrl = getClass().getResource("/sounds/theme.mp3");
+            URL musicUrl = getClass().getResource("/sounds/background.mp3");
             if (musicUrl != null) {
                 Media backgroundMusic = new Media(musicUrl.toExternalForm());
                 musicPlayer = new MediaPlayer(backgroundMusic);
@@ -257,7 +257,6 @@ public class Gameplay extends Application {
         root.setRight(rightBar);
         root.setBottom(new VBox(backBar, authorBar));
         root.setStyle("-fx-background-color: #f9f9f9;");
-
         int sceneWidth  = board.width()  * cellSize + 40;
         int sceneHeight = board.height() * cellSize + 120;
         Scene scene = new Scene(root, sceneWidth, sceneHeight);
@@ -266,18 +265,29 @@ public class Gameplay extends Application {
         // Controls
         scene.setOnKeyPressed(e -> {
             switch (e.getCode()) {
-                case A -> tryMoveLeft();
-                case D -> tryMoveRight();
+                case A -> {
+                    tryMoveLeft();
+                    playSound("/sounds/move-turn.wav");
+                }
+                case D -> {
+                    tryMoveRight();
+                    playSound("/sounds/move-turn.wav");
+                }
                 case S -> boost(true);
                 case P -> pauseGame();
-                case W, UP -> tryRotate();
+                case W, UP -> {
+                    tryRotate();
+                    playSound("/sounds/move-turn.wav");
+                }
                 case M -> toggleMusic();
                 case N -> toggleSound();
             }
         });
+
         scene.setOnKeyReleased(e -> {
             if (e.getCode() == KeyCode.S) boost(false);
         });
+
 
         stage.setTitle("Tetris");
         stage.setMinWidth(500);
@@ -319,8 +329,7 @@ public class Gameplay extends Application {
         };
         timer.start();
 
-        // SFX
-        URL soundUrl = getClass().getResource("/sounds/beep.mp3");
+        URL soundUrl = getClass().getResource("/sounds/erase-line.wav");
         if (soundUrl != null) {
             Media beep = new Media(soundUrl.toExternalForm());
             beepPlayer = new MediaPlayer(beep);
@@ -819,9 +828,9 @@ public class Gameplay extends Application {
 
     private void initMusicPlayerIfNeeded() {
         if (musicPlayer != null) return;
-        URL musicUrl = getClass().getResource("/sounds/theme.mp3");
+        URL musicUrl = getClass().getResource("/sounds/background.mp3");
         if (musicUrl == null) {
-            System.err.println("theme.mp3 not found under /sounds");
+            System.err.println("background.mp3 not found under /sounds");
             return;
         }
         Media bg = new Media(musicUrl.toExternalForm());
@@ -829,11 +838,25 @@ public class Gameplay extends Application {
         musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
     }
 
+    private void playSound(String resource) {
+        if (config.isSoundEffect()) {
+            URL soundUrl = getClass().getResource(resource);
+            if (soundUrl != null) {
+                Media media = new Media(soundUrl.toExternalForm());
+                MediaPlayer player = new MediaPlayer(media);
+                player.setOnEndOfMedia(player::dispose);
+                player.play();
+            }
+        }
+    }
+
     // Save score on game over
     private void handleGameOver() {
         if (timer != null) timer.stop();
         gameOver = true;
 
+        // 🔊 Play game over sound
+        playSound("/sounds/game-finish.wav");
         javafx.application.Platform.runLater(() -> {
             TextInputDialog dialog = new TextInputDialog("Player");
             dialog.initOwner(mainStage);
