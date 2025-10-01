@@ -19,16 +19,25 @@ public class HighScore extends Application {
         private final String name;
         private final int score;
         private final String gameType;
+        private final String boardSize; // NEW
+        private final int level;        // NEW
+        private final String mode;      // NEW
 
-        public ScoreEntry(String name, int score, String gameType) {
+        public ScoreEntry(String name, int score, String gameType, String boardSize, int level, String mode) {
             this.name = name;
             this.score = score;
             this.gameType = gameType;
+            this.boardSize = boardSize;
+            this.level = level;
+            this.mode = mode;
         }
 
         public String getName() { return name; }
         public int getScore() { return score; }
         public String getGameType() { return gameType; }
+        public String getBoardSize() { return boardSize; }
+        public int getLevel() { return level; }
+        public String getMode() { return mode; }
     }
 
     private final HighScoreManager manager = new HighScoreManager();
@@ -42,7 +51,7 @@ public class HighScore extends Application {
         titleBox.setAlignment(Pos.CENTER);
 
         table = new TableView<>();
-        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
 
         TableColumn<ScoreEntry, String> nameCol = new TableColumn<>("Name");
         nameCol.setCellValueFactory(new PropertyValueFactory<>("name"));
@@ -55,7 +64,20 @@ public class HighScore extends Application {
         typeCol.setCellValueFactory(new PropertyValueFactory<>("gameType"));
         typeCol.setStyle("-fx-alignment: CENTER;");
 
-        table.getColumns().addAll(nameCol, scoreCol, typeCol);
+        // NEW columns
+        TableColumn<ScoreEntry, String> boardCol = new TableColumn<>("Board");
+        boardCol.setCellValueFactory(new PropertyValueFactory<>("boardSize"));
+        boardCol.setStyle("-fx-alignment: CENTER;");
+
+        TableColumn<ScoreEntry, Integer> levelCol = new TableColumn<>("Level");
+        levelCol.setCellValueFactory(new PropertyValueFactory<>("level"));
+        levelCol.setStyle("-fx-alignment: CENTER;");
+
+        TableColumn<ScoreEntry, String> modeCol = new TableColumn<>("Mode");
+        modeCol.setCellValueFactory(new PropertyValueFactory<>("mode"));
+        modeCol.setStyle("-fx-alignment: CENTER;");
+
+        table.getColumns().addAll(nameCol, scoreCol, typeCol, boardCol, levelCol, modeCol);
         refreshTable();
 
         Button clearButton = new Button("Clear High Scores");
@@ -95,12 +117,28 @@ public class HighScore extends Application {
     private void refreshTable() {
         table.getItems().clear();
         List<Score> scores = manager.loadScores();
+
         for (Score s : scores) {
-            table.getItems().add(new ScoreEntry(s.getPlayerName(), s.getPoints(), s.getGameType()));
+            // Back-compat defaults if old entries lack fields
+            int bw = (s.getBoardWidth() > 0) ? s.getBoardWidth() : 10;
+            int bh = (s.getBoardHeight() > 0) ? s.getBoardHeight() : 20;
+            int lvl = (s.getLevel() > 0) ? s.getLevel() : 1;
+            String mode = (s.getMode() != null && !s.getMode().isBlank()) ? s.getMode() : "Single";
+            String boardSize = bw + "×" + bh;
+
+            table.getItems().add(new ScoreEntry(
+                    s.getPlayerName(),
+                    s.getPoints(),
+                    s.getGameType() != null ? s.getGameType() : "Human",
+                    boardSize,
+                    lvl,
+                    mode
+            ));
         }
+
         table.setFixedCellSize(25);
         table.prefHeightProperty().bind(
-                table.fixedCellSizeProperty().multiply(table.getItems().size()).add(30)
+                table.fixedCellSizeProperty().multiply(Math.max(table.getItems().size(), 1)).add(30)
         );
         table.setPlaceholder(new Label(""));
     }

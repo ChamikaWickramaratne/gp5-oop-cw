@@ -54,6 +54,10 @@ public class TwoPlayerBoard extends Application {
         // --- UI layout ---
         Button back = new Button("Back");
         back.setOnAction(e -> {
+            // ✅ Pause both sides while the dialog is open (only if not game over)
+            left.pauseForMenu();
+            right.pauseForMenu();
+
             Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
             alert.initOwner(stage);
             alert.setTitle("Leave Game?");
@@ -68,7 +72,6 @@ public class TwoPlayerBoard extends Application {
                 if (response == yes) {
                     left.dispose(); right.dispose();
                     try {
-                        // reset window back to menu size
                         stage.setWidth(UIConfigurations.WINDOW_WIDTH);
                         stage.setHeight(UIConfigurations.WINDOW_HEIGHT);
                         stage.centerOnScreen();
@@ -77,6 +80,9 @@ public class TwoPlayerBoard extends Application {
                         ex.printStackTrace();
                     }
                 } else {
+                    // ✅ User cancelled: resume both sides and refocus
+                    left.resumeFromMenu();
+                    right.resumeFromMenu();
                     javafx.application.Platform.runLater(() -> stage.getScene().getRoot().requestFocus());
                 }
             });

@@ -100,15 +100,15 @@ public class ConfigScreen extends Application {
         soundRow.setAlignment(Pos.TOP_LEFT);
 
         // AI Play
-        CheckBox aiPlayCheckBox = new CheckBox("AI Play");
-        aiPlayCheckBox.setSelected(config.isAiPlay());
-        Label aiValue = new Label(config.isAiPlay() ? "On" : "Off");
-        aiPlayCheckBox.selectedProperty().addListener((obs, o, n) -> {
-            aiValue.setText(n ? "On" : "Off");
-            config.setAiPlay(n);
-        });
-        HBox aiRow = new HBox(10, aiPlayCheckBox, aiValue);
-        aiRow.setAlignment(Pos.TOP_LEFT);
+//        CheckBox aiPlayCheckBox = new CheckBox("AI Play");
+//        aiPlayCheckBox.setSelected(config.isAiPlay());
+//        Label aiValue = new Label(config.isAiPlay() ? "On" : "Off");
+//        aiPlayCheckBox.selectedProperty().addListener((obs, o, n) -> {
+//            aiValue.setText(n ? "On" : "Off");
+//            config.setAiPlay(n);
+//        });
+//        HBox aiRow = new HBox(10, aiPlayCheckBox, aiValue);
+//        aiRow.setAlignment(Pos.TOP_LEFT);
 
         // Extend Mode
         CheckBox extendModeCheckBox = new CheckBox("Extend Mode");
@@ -197,7 +197,7 @@ public class ConfigScreen extends Application {
                 fieldWidthRow,
                 fieldHeightRow,
                 fieldGameRow,
-                musicRow, soundRow, aiRow, extendRow,
+                musicRow, soundRow, extendRow,
                 p1Row, p2Row,
                 buttonRow
         );

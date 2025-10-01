@@ -134,8 +134,8 @@ public class Gameplay extends Application {
 
     private String currentPlayerType() {
         // Reflects the *actual* control for Player 1 this run
-        if (useExternal) return "External";
-        if (useAI) return "AI";
+        if (config.getPlayer1Type() == PlayerType.EXTERNAL) return "External";
+        if (config.getPlayer1Type() == PlayerType.AI) return "AI";
         return "Human";
     }
 
@@ -195,10 +195,10 @@ public class Gameplay extends Application {
 
         PlayerFactory.configureForType(this, config.getPlayer1Type(), "localhost", 3000);
 
-        if (config.isAiPlay() && config.getPlayer1Type() == PlayerType.HUMAN) {
-            enableAI(new tetris.model.ai.BetterHeuristic());
-            applyAutoBoostIfNeeded();
-        }
+//        if (config.isAiPlay() && config.getPlayer1Type() == PlayerType.HUMAN) {
+//            enableAI(new tetris.model.ai.BetterHeuristic());
+//            applyAutoBoostIfNeeded();
+//        }
 
         scoreLabel = new Label("Score: 0");
         scoreLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
@@ -983,6 +983,7 @@ public class Gameplay extends Application {
         gameOver = true;
 
         playSound("/sounds/game-finish.wav");
+
         javafx.application.Platform.runLater(() -> {
             TextInputDialog dialog = new TextInputDialog("Player");
             dialog.initOwner(mainStage);
@@ -990,11 +991,24 @@ public class Gameplay extends Application {
             dialog.setHeaderText("Your Score: " + score);
             dialog.setContentText("Enter your name:");
 
-            Optional<String> result = dialog.showAndWait();
-            result.ifPresent(name -> {
+            dialog.showAndWait().ifPresent(rawName -> {
+                String name = (rawName != null) ? rawName.trim() : "Player";
+                if (name.isEmpty()) name = "Player";
                 HighScoreManager manager = new HighScoreManager();
-                String type = currentPlayerType(); // "Human", "AI", or "External"
-                manager.addScore(new Score(name, score, type));
+                String gameType = currentPlayerType();
+                TetrisConfig cfg = ConfigService.load();
+                String mode = isMultiplayerGame() ? "Multiplayer" : "Single";
+                Score s = new Score(
+                        name,
+                        score,
+                        gameType,
+                        cfg.getFieldWidth(),
+                        cfg.getFieldHeight(),
+                        cfg.getGameLevel(),
+                        mode
+                );
+
+                manager.addScore(s);
             });
 
             try {
@@ -1004,6 +1018,11 @@ public class Gameplay extends Application {
             }
         });
     }
+
+    private boolean isMultiplayerGame() {
+        return false;
+    }
+
 
     public static void main(String[] args) { launch(args); }
 }

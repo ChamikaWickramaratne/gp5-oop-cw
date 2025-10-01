@@ -96,6 +96,34 @@ public class GamePane extends BorderPane {
     private Label linesLabel;
     private int linesCleared = 0;
     private boolean humanBoosting = false;
+    public boolean isGameOver() { return gameOver; }
+    public boolean isPaused()   { return paused; }
+
+    public void pause() {
+        if (!paused) {
+            paused = true;
+            if (musicPlayer != null && config.isMusic()) musicPlayer.pause();
+        }
+    }
+
+    public void resume() {
+        if (gameOver) return;
+        if (paused) {
+            paused = false;
+            lastDropTime = 0L; // avoid instant drop spike
+            if (musicPlayer != null && config.isMusic()) musicPlayer.play();
+        }
+    }
+
+    /** Called when opening a menu/confirm dialog */
+    public void pauseForMenu() {
+        if (!gameOver) pause();
+    }
+
+    /** Called when dismissing a menu/confirm dialog without exiting */
+    public void resumeFromMenu() {
+        if (!gameOver) resume();
+    }
 
     private long baseDropSpeed() {
         return 1_000_000_000L / Math.max(1, config.getGameLevel());
@@ -772,13 +800,37 @@ public class GamePane extends BorderPane {
             dialog.setHeaderText("Your Score: " + score);
             dialog.setContentText("Enter your name:");
 
-            Optional<String> result = dialog.showAndWait();
-            result.ifPresent(name -> {
+            dialog.showAndWait().ifPresent(name -> {
                 HighScoreManager manager = new HighScoreManager();
-                String type = currentPlayerType(); // "Human", "AI", or "External"
-                manager.addScore(new Score(name, score, type));
+
+                // Existing type ("Human", "AI", "External", etc.)
+                String gameType = currentPlayerType();
+
+                // Pull current config for board + level
+                TetrisConfig cfg = ConfigService.load();
+
+                // Decide Single/Multiplayer based on your scene context
+                boolean isMultiplayer = isMultiplayerGame(); // implement to suit your class
+                String mode = isMultiplayer ? "Multiplayer" : "Single";
+
+                // NEW: pass board size, level, and mode
+                Score s = new Score(
+                        name,
+                        score,
+                        gameType,
+                        cfg.getFieldWidth(),
+                        cfg.getFieldHeight(),
+                        cfg.getGameLevel(),
+                        mode
+                );
+
+                manager.addScore(s);
             });
         });
+    }
+
+    private boolean isMultiplayerGame() {
+        return true;
     }
 
     private void requestExternalForCurrent() {
