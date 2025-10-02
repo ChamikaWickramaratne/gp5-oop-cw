@@ -89,17 +89,17 @@ public class TwoPlayerBoard extends Application {
             });
         });
 
-        HBox topBar = new HBox(back);
-        topBar.setAlignment(Pos.CENTER_LEFT);
-        topBar.setPadding(new Insets(8));
-
         HBox boards = new HBox(16, left, right);
         boards.setPadding(new Insets(12));
         boards.setAlignment(Pos.CENTER);
 
+        HBox bottomBar = new HBox(back);
+        bottomBar.setAlignment(Pos.CENTER);
+        bottomBar.setPadding(new Insets(12, 12, 16, 12));
+
         BorderPane root = new BorderPane();
-        root.setTop(topBar);
         root.setCenter(boards);
+        root.setBottom(bottomBar);
 
         // Size to content so both panes fit perfectly
         Scene scene = new Scene(root);
