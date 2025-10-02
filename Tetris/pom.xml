@@ -48,7 +48,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>tetris.ui.SplashScreen</mainClass>
+                    <mainClass>tetris.view.SplashScreen</mainClass>
                 </configuration>
             </plugin>
         </plugins>
