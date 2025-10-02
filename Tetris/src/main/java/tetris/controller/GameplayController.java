@@ -163,17 +163,17 @@ public class GameplayController {
                 case W, UP -> { if (humanInputEnabled()) { tryRotate(); playSound("/sounds/move-turn.wav"); } }
 
                 // Boost: human can toggle; AI ignores (always boosted below)
-                case X -> { if (state != null && state.allowsHumanInput()) boost(true); }
+                case S -> { if (state != null && state.allowsHumanInput()) boost(true); }
 
                 // Global controls
                 case P -> togglePause();
                 case M -> toggleMusic();
-                case S -> toggleSound();
+                case N -> toggleSound();
             }
         });
 
         stage.getScene().setOnKeyReleased(e -> {
-            if (e.getCode() == KeyCode.X && state != null && state.allowsHumanInput()) {
+            if (e.getCode() == KeyCode.S && state != null && state.allowsHumanInput()) {
                 boost(false);
             }
         });

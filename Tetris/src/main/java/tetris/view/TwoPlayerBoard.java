@@ -131,7 +131,7 @@ public class TwoPlayerBoard extends Application {
                 case A -> { if (leftHuman)  left.tryMoveLeft(); }
                 case D -> { if (leftHuman)  left.tryMoveRight(); }
                 case W -> { if (leftHuman)  left.tryRotate(); }
-                case X -> { if (leftHuman)  left.boost(true); }
+                case S -> { if (leftHuman)  left.boost(true); }
 
                 // Right side human controls
                 case LEFT  -> { if (rightHuman) right.tryMoveLeft(); }
@@ -142,12 +142,12 @@ public class TwoPlayerBoard extends Application {
                 // Global pause toggles both
                 case P -> { left.pauseToggle(); right.pauseToggle(); }
                 case M -> toggleMusic();
-                case S -> toggleSound();
+                case N -> toggleSound();
             }
         });
         scene.setOnKeyReleased(e -> {
             switch (e.getCode()) {
-                case X    -> { if (leftHuman)  left.boost(false); }
+                case S    -> { if (leftHuman)  left.boost(false); }
                 case DOWN -> { if (rightHuman) right.boost(false); }
             }
         });
