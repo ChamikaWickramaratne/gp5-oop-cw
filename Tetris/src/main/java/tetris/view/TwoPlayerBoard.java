@@ -30,6 +30,8 @@ public class TwoPlayerBoard extends Application {
     private final int    externalPort = 3000;
     private MediaPlayer musicPlayer;
     private MediaPlayer beepPlayer;
+    private boolean leftOver=false, rightOver=false;
+    private boolean leftSaved=false, rightSaved=false;
 
     @Override
     public void start(Stage stage) {
@@ -156,21 +158,33 @@ public class TwoPlayerBoard extends Application {
 
         GamePane.GameOverWatcher watcher = new GamePane.GameOverWatcher() {
             @Override public void onHighScoreDialogShown(GamePane who) {
-                // Pause the other side
                 if (who == left) right.pause(); else left.pause();
-
-                // Also pause the shared music while dialog is open
-                if (musicPlayer != null) {
-                    try { musicPlayer.pause(); } catch (Exception ignore) {}
-                }
+                if (musicPlayer != null) { try { musicPlayer.pause(); } catch (Exception ignore) {} }
             }
-            @Override public void onHighScoreDialogClosed(GamePane who) {
-                // Resume the other side
-                if (who == left) right.resume(); else left.resume();
 
-                // Resume music if setting is still on
+            @Override public void onHighScoreDialogClosed(GamePane who) {
+                if (who == left) right.resume(); else left.resume();
                 if (TetrisConfig.getInstance().isMusic() && musicPlayer != null) {
                     try { musicPlayer.play(); } catch (Exception ignore) {}
+                }
+            }
+
+            @Override public void onGameOverReached(GamePane who) {          // NEW
+                if (who == left) leftOver = true; else rightOver = true;
+                maybeShowHighScores(stage);
+            }
+
+            @Override public void onScoreSaved(GamePane who) {               // NEW
+                if (who == left) leftSaved = true; else rightSaved = true;
+                maybeShowHighScores(stage);
+            }
+
+            private void maybeShowHighScores(Stage stage) {
+                // Only navigate when BOTH are game over AND BOTH saved a score
+                if (leftOver && rightOver && leftSaved && rightSaved) {
+                    stopAndDisposeMusic();        // make sure music stops
+                    try { new HighScore().start(stage); }
+                    catch (Exception e) { e.printStackTrace(); }
                 }
             }
         };

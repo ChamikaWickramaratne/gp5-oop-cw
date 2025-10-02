@@ -109,6 +109,8 @@ public class GamePane extends BorderPane {
     public interface GameOverWatcher {
         void onHighScoreDialogShown(GamePane who);
         void onHighScoreDialogClosed(GamePane who);
+        void onGameOverReached(GamePane who);   // fired when state enters GameOver
+        void onScoreSaved(GamePane who);
     }
 
     private interface GameState {
@@ -197,8 +199,8 @@ public class GamePane extends BorderPane {
             if (timer != null) timer.stop();
             playSound("/sounds/game-finish.wav");
 
-            // ✅ tell the container (TwoPlayerBoard) to pause the other side
             if (gameOverWatcher != null) {
+                gameOverWatcher.onGameOverReached(GamePane.this);   // NEW
                 gameOverWatcher.onHighScoreDialogShown(GamePane.this);
             }
 
@@ -212,22 +214,18 @@ public class GamePane extends BorderPane {
                     HighScoreManager manager = new HighScoreManager();
                     String gameType = currentPlayerType();
                     TetrisConfig cfg = TetrisConfig.getInstance();
-                    boolean isMultiplayer = isMultiplayerGame();
-                    String mode = isMultiplayer ? "Multiplayer" : "Single";
+                    String mode = isMultiplayerGame() ? "Multiplayer" : "Single";
 
                     Score s = new Score(
-                            name,
-                            score,
-                            gameType,
-                            cfg.getFieldWidth(),
-                            cfg.getFieldHeight(),
-                            cfg.getGameLevel(),
-                            mode
+                            name, score, gameType,
+                            cfg.getFieldWidth(), cfg.getFieldHeight(),
+                            cfg.getGameLevel(), mode
                     );
                     manager.addScore(s);
+
+                    if (gameOverWatcher != null) gameOverWatcher.onScoreSaved(GamePane.this); // NEW
                 });
 
-                // ✅ dialog is closed — let the container resume the other side
                 if (gameOverWatcher != null) {
                     gameOverWatcher.onHighScoreDialogClosed(GamePane.this);
                 }

@@ -182,7 +182,7 @@ public class GameplayController {
         view.getBackButton().setOnAction(e -> {
             if (state instanceof GameOverState) {
                 stopTimer();
-                if (musicPlayer != null) musicPlayer.stop();
+                stopMusicAndDispose();
                 try { new MainMenu().start(stage); } catch (Exception ex) { ex.printStackTrace(); }
             } else {
                 GameState before = state;
@@ -201,7 +201,7 @@ public class GameplayController {
                 alert.showAndWait().ifPresent(response -> {
                     if (response == yes) {
                         stopTimer();
-                        if (musicPlayer != null) musicPlayer.stop();
+                        stopMusicAndDispose();
                         try { new MainMenu().start(stage); } catch (Exception ex) { ex.printStackTrace(); }
                     } else {
                         if (!(before instanceof GameOverState)) setState(new RunningState(this));
@@ -952,13 +952,21 @@ public class GameplayController {
                 );
                 manager.addScore(s);
             });
-
+            stopMusicAndDispose();
             try {
                 new HighScore().start(stage);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         });
+    }
+
+    private void stopMusicAndDispose() {
+        if (musicPlayer != null) {
+            try { musicPlayer.stop(); } catch (Exception ignored) {}
+            try { musicPlayer.dispose(); } catch (Exception ignored) {}
+            musicPlayer = null;
+        }
     }
 
     private boolean isMultiplayerGame() {
