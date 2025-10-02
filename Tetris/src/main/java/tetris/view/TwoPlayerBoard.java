@@ -19,6 +19,7 @@ import javafx.stage.Stage;
 import tetris.config.ConfigService;
 import tetris.config.TetrisConfig;
 import tetris.config.PlayerType;
+import tetris.controller.GamePane;
 import tetris.controller.PlayerFactory;
 
 import java.net.URL;
@@ -27,7 +28,6 @@ public class TwoPlayerBoard extends Application {
 
     private final String externalHost = "localhost";
     private final int    externalPort = 3000;
-    private final TetrisConfig config = ConfigService.load();
     private MediaPlayer musicPlayer;
     private MediaPlayer beepPlayer;
 
@@ -75,6 +75,7 @@ public class TwoPlayerBoard extends Application {
                         stage.setWidth(UIConfigurations.WINDOW_WIDTH);
                         stage.setHeight(UIConfigurations.WINDOW_HEIGHT);
                         stage.centerOnScreen();
+                        stopAndDisposeMusic();
                         new MainMenu().start(stage);
                     } catch (Exception ex) {
                         ex.printStackTrace();
@@ -113,6 +114,13 @@ public class TwoPlayerBoard extends Application {
         stage.centerOnScreen();
         stage.setMinWidth(stage.getWidth());
         stage.setMinHeight(stage.getHeight());
+        if (cfg.isMusic()) {
+            initMusicPlayerIfNeeded();
+            if (musicPlayer != null) {
+                musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+                musicPlayer.play();
+            }
+        }
         stage.show();
         javafx.application.Platform.runLater(root::requestFocus);
 
@@ -144,9 +152,36 @@ public class TwoPlayerBoard extends Application {
             }
         });
 
-        stage.setOnCloseRequest(ev -> { left.dispose(); right.dispose(); });
+        stage.setOnCloseRequest(ev -> { left.dispose(); right.dispose(); stopAndDisposeMusic(); });
 
-        // Start after wiring everything
+        GamePane.GameOverWatcher watcher = new GamePane.GameOverWatcher() {
+            @Override public void onHighScoreDialogShown(GamePane who) {
+                // Pause the other side
+                if (who == left) right.pause(); else left.pause();
+
+                // Also pause the shared music while dialog is open
+                if (musicPlayer != null) {
+                    try { musicPlayer.pause(); } catch (Exception ignore) {}
+                }
+            }
+            @Override public void onHighScoreDialogClosed(GamePane who) {
+                // Resume the other side
+                if (who == left) right.resume(); else left.resume();
+
+                // Resume music if setting is still on
+                if (TetrisConfig.getInstance().isMusic() && musicPlayer != null) {
+                    try { musicPlayer.play(); } catch (Exception ignore) {}
+                }
+            }
+        };
+
+        left.setGameOverWatcher(watcher);
+        right.setGameOverWatcher(watcher);
+
+
+        left.setGameOverWatcher(watcher);
+        right.setGameOverWatcher(watcher);
+
         left.startGame();
         right.startGame();
     }
@@ -169,6 +204,7 @@ public class TwoPlayerBoard extends Application {
 
 
     private void toggleMusic() {
+        TetrisConfig config = TetrisConfig.getInstance();
         boolean newVal = !config.isMusic();
         config.setMusic(newVal);
         ConfigService.save(config);
@@ -184,6 +220,7 @@ public class TwoPlayerBoard extends Application {
     }
 
     private void toggleSound() {
+        TetrisConfig config = TetrisConfig.getInstance();
         boolean newVal = !config.isSoundEffect();
         config.setSoundEffect(newVal);
         ConfigService.save(config);
@@ -199,6 +236,15 @@ public class TwoPlayerBoard extends Application {
         Media bg = new Media(musicUrl.toExternalForm());
         musicPlayer = new MediaPlayer(bg);
         musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+    }
+
+    // TwoPlayerBoard.java
+    private void stopAndDisposeMusic() {
+        if (musicPlayer != null) {
+            try { musicPlayer.stop(); } catch (Exception ignored) {}
+            try { musicPlayer.dispose(); } catch (Exception ignored) {}
+            musicPlayer = null;
+        }
     }
 
     public static void main(String[] args) { launch(args); }

@@ -1,6 +1,12 @@
+// src/main/java/tetris/model/service/ScoreService.java
 package tetris.model.service;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public final class ScoreService {
+    private static final List<ScoreObserver> observers = new ArrayList<>();
+
     private ScoreService() {}
 
     public static int pointsFor(int lines) {
@@ -8,12 +14,26 @@ public final class ScoreService {
 
         int points = 0;
         int increment = 100;
-
         for (int i = 1; i <= lines; i++) {
             points += increment;
-            increment += 100; // difference increases by 100 each step
+            increment += 100;
         }
-
         return points;
+    }
+
+    // 🟢 Observer registration
+    public static void addObserver(ScoreObserver observer) {
+        observers.add(observer);
+    }
+
+    public static void removeObserver(ScoreObserver observer) {
+        observers.remove(observer);
+    }
+
+    // 🟡 Notify listeners of a score change
+    public static void notifyScoreChanged(int newScore) {
+        for (ScoreObserver obs : observers) {
+            obs.onScoreChanged(newScore);
+        }
     }
 }

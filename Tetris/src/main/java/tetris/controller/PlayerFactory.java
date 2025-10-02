@@ -1,13 +1,12 @@
 package tetris.controller;
 
 import tetris.config.PlayerType;
-import tetris.view.GamePane;
-import tetris.view.Gameplay;
+//import tetris.view.Gameplay;
 
 public final class PlayerFactory {
     private PlayerFactory() {}
 
-    public static void configureForType(Gameplay gameplay,
+    public static void configureForType(GameplayController gameplay,
                                         PlayerType type,
                                         String host, int port) {
         switch (type) {

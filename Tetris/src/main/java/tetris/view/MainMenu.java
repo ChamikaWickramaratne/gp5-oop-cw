@@ -13,6 +13,7 @@ import javafx.stage.Stage;
 
 import tetris.config.ConfigService;
 import tetris.config.TetrisConfig;
+import tetris.controller.GameplayController;
 
 public class MainMenu extends Application {
 
@@ -34,14 +35,15 @@ public class MainMenu extends Application {
         // Single entry point for starting the game based on config.extendMode
         startButton.setOnAction(e -> {
             try {
-                TetrisConfig cfg = ConfigService.load();
+                TetrisConfig cfg = TetrisConfig.getInstance();
                 boolean extend = cfg.isExtendMode();
                 if (extend) {
                     // Multiplayer path
                     new TwoPlayerBoard().start(primaryStage);
                 } else {
                     // Single player path
-                    new Gameplay().start(primaryStage);
+                    GameplayController controller = new GameplayController();
+                    controller.start(primaryStage);
                 }
             } catch (Exception ex) {
                 ex.printStackTrace();

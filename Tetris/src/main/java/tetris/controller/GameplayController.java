@@ -1,58 +1,59 @@
-// src/main/java/tetris/ui/Gameplay.java
-package tetris.view;
+// src/main/java/tetris/controller/GameplayController.java
+package tetris.controller;
 
 import javafx.animation.AnimationTimer;
-import javafx.application.Application;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
+import javafx.application.Platform;
 import javafx.geometry.VPos;
-import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
+import javafx.scene.media.Media;
+import javafx.scene.media.MediaPlayer;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
 
-import tetris.config.PlayerType;
 import tetris.config.ConfigService;
+import tetris.config.PlayerType;
 import tetris.config.TetrisConfig;
-import tetris.controller.*;
+
 import tetris.model.Board;
-import tetris.model.TetrominoType;
 import tetris.model.Vec;
+import tetris.model.TetrominoType;
 import tetris.model.piece.ActivePiece;
 import tetris.model.rules.RotationStrategy;
 import tetris.model.rules.SrsRotation;
-import tetris.model.service.ScoreService;
+
 import tetris.model.service.HighScoreManager;
+import tetris.model.service.ScoreObserver;
+import tetris.model.service.ScoreService;
 import tetris.model.service.Score;
 
-import javafx.scene.media.Media;
-import javafx.scene.media.MediaPlayer;
+import tetris.view.SinglePlayerView;
+import tetris.view.HighScore;
+import tetris.view.MainMenu;
+
+// Brains & networking (as per your packages)
+
+// State pattern
+
 import java.net.URL;
-import java.util.Optional;
 import java.util.Random;
 
-public class Gameplay extends Application {
+public class GameplayController {
 
     // ======== Config ========
-    private final TetrisConfig config = ConfigService.load();
+    private final TetrisConfig config = TetrisConfig.getInstance();
 
-    // ======== Visual constants ========
-    private static final int cellSize = 20;
+    // ======== Visual constants (from view) ========
+    private static final int cellSize = SinglePlayerView.CELL_SIZE;
 
     // ======== Game ticking ========
     private long lastDropTime = 0L;
     private long dropSpeed;
-    private boolean paused = false;
-    private boolean gameOver = false;
     private int score = 0;
 
     // ======== Audio ========
@@ -71,16 +72,11 @@ public class Gameplay extends Application {
     private Color currentColor;              // colour for the active piece
     private final RotationStrategy rotator = new SrsRotation();
 
-    // UI
-    private Label scoreLabel;
+    // UI (via view)
+    private SinglePlayerView view;
     private AnimationTimer timer;
     private TetrominoType nextType;
     private Color nextColor;
-    private Canvas boardCanvas;
-    private Canvas nextCanvas;
-    private Label playerTypeLabel;
-    private Label levelLabel;
-    private Label linesLabel;
     private int linesCleared = 0;
 
     // ======== External brain (network) ========
@@ -89,19 +85,19 @@ public class Gameplay extends Application {
     private Player extPlayer;
     private boolean extControlsThisPiece = false;
 
-    // ======== AI brain (like GamePane, non-blocking) ========
+    // ======== AI brain ========
     private boolean useAI = false;
     private AIPlayer aiPlayer;
     private boolean aiAnimating = false;
 
-    private enum AiPhase { ROTATE, SHIFT, DROP }
+    private enum AiPhase { ROTATE, SHIFT }
     private AiPhase aiPhase;
     private int aiTargetX = 0;          // LEFTMOST column target
     private int aiRotLeft = 0;
     private int aiRotateAttempts = 0;
     private int aiRotateMax = 12;
 
-    // ======== External micro-steps (real-time like AI) ========
+    // ======== External micro-steps ========
     private boolean extAnimating = false;
 
     private enum ExtPhase { ROTATE, SHIFT }
@@ -111,40 +107,151 @@ public class Gameplay extends Application {
     private int extRotLeft = 0;
     private int extRotateAttempts = 0;
     private int extRotateMax = 12;
+
     // Gravity helpers
     private static final long BOOST_NANOS = 100_000_000L;
     private boolean humanBoosting = false;
 
-    private long baseDropSpeed() {
-        return 1_000_000_000L / Math.max(1, config.getGameLevel());
+    // ======== Score observer (for Observer pattern) ========
+    private final ScoreObserver scoreObserver = newScore ->
+            Platform.runLater(() -> { if (view != null) view.setScore(newScore); });
+
+
+    // Stage
+    private Stage stage;
+
+    // ======== State pattern ========
+    private GameState state;
+
+    private void setState(GameState next) {
+        if (state != null) state.onExit();
+        state = next;
+        state.onEnter();
+    }
+    private boolean humanInputEnabled() {
+        return state != null && state.allowsHumanInput()
+                && !useAI && !useExternal && !extControlsThisPiece;
     }
 
-    private void applyAutoBoostIfNeeded() {
-        boolean botControlling =
-                (useAI && (aiAnimating || extControlsThisPiece)) ||
-                        (useExternal && extControlsThisPiece);
+    // ======== Public wiring ========
+    public void start(Stage stage) {
+        this.stage = stage;
 
-        if (botControlling) {
-            dropSpeed = BOOST_NANOS;
-        } else {
-            dropSpeed = humanBoosting ? BOOST_NANOS : baseDropSpeed();
+        // Create board with config size
+        board = new Board(config.getFieldWidth(), config.getFieldHeight());
+        dropSpeed = baseDropSpeed();
+
+        // View
+        view = new SinglePlayerView(board.width(), board.height());
+        view.setPlayerTypeText(currentPlayerType());
+        view.setLevel(config.getGameLevel());
+        view.setLines(0);
+        ScoreService.addObserver(scoreObserver);
+        int sceneWidth  = board.width()  * cellSize + 40;
+        int sceneHeight = board.height() * cellSize + 120;
+        view.attachTo(stage, "Tetris", sceneWidth, sceneHeight);
+
+        // Let PlayerFactory decide AI/External based on config
+        PlayerFactory.configureForType(this, config.getPlayer1Type(), "localhost", 3000);
+
+        // Controls
+        stage.getScene().setOnKeyPressed(e -> {
+            switch (e.getCode()) {
+                // Human-only movement
+                case A -> { if (humanInputEnabled()) { tryMoveLeft();  playSound("/sounds/move-turn.wav"); } }
+                case D -> { if (humanInputEnabled()) { tryMoveRight(); playSound("/sounds/move-turn.wav"); } }
+                case W, UP -> { if (humanInputEnabled()) { tryRotate(); playSound("/sounds/move-turn.wav"); } }
+
+                // Boost: human can toggle; AI ignores (always boosted below)
+                case X -> { if (state != null && state.allowsHumanInput()) boost(true); }
+
+                // Global controls
+                case P -> togglePause();
+                case M -> toggleMusic();
+                case S -> toggleSound();
+            }
+        });
+
+        stage.getScene().setOnKeyReleased(e -> {
+            if (e.getCode() == KeyCode.X && state != null && state.allowsHumanInput()) {
+                boost(false);
+            }
+        });
+
+        // Back button
+        view.getBackButton().setOnAction(e -> {
+            if (state instanceof GameOverState) {
+                stopTimer();
+                if (musicPlayer != null) musicPlayer.stop();
+                try { new MainMenu().start(stage); } catch (Exception ex) { ex.printStackTrace(); }
+            } else {
+                GameState before = state;
+                setState(new PausedState(this));
+
+                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                alert.initOwner(stage);
+                alert.setTitle("Leave Game?");
+                alert.setHeaderText("Exit to Main Menu");
+                alert.setContentText("Your current game will be lost. Are you sure?");
+
+                ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
+                ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
+                alert.getButtonTypes().setAll(yes, no);
+
+                alert.showAndWait().ifPresent(response -> {
+                    if (response == yes) {
+                        stopTimer();
+                        if (musicPlayer != null) musicPlayer.stop();
+                        try { new MainMenu().start(stage); } catch (Exception ex) { ex.printStackTrace(); }
+                    } else {
+                        if (!(before instanceof GameOverState)) setState(new RunningState(this));
+                    }
+                });
+            }
+        });
+
+        // Background Music
+        if (config.isMusic()) {
+            URL musicUrl = getClass().getResource("/sounds/background.mp3");
+            if (musicUrl != null) {
+                Media backgroundMusic = new Media(musicUrl.toExternalForm());
+                musicPlayer = new MediaPlayer(backgroundMusic);
+                musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
+                musicPlayer.setOnReady(() -> musicPlayer.play());
+            }
         }
+
+        // Beep SFX
+        URL soundUrl = getClass().getResource("/sounds/erase-line.wav");
+        if (soundUrl != null) {
+            Media beep = new Media(soundUrl.toExternalForm());
+            beepPlayer = new MediaPlayer(beep);
+            beepPlayer.setOnEndOfMedia(() -> beepPlayer.stop());
+        }
+
+        stage.show();
+        resetGameState();
+        spawnNewPiece();
+
+        // Start in Running state
+        setState(new RunningState(this));
+
+        // Tick loop — delegates to current state
+        timer = new AnimationTimer() {
+            @Override public void handle(long now) {
+                if (state != null) state.onTick(now);
+                draw(view.getBoardGC());
+            }
+        };
+        timer.start();
     }
 
-
-    private String currentPlayerType() {
-        // Reflects the *actual* control for Player 1 this run
-        if (config.getPlayer1Type() == PlayerType.EXTERNAL) return "External";
-        if (config.getPlayer1Type() == PlayerType.AI) return "AI";
-        return "Human";
-    }
-
+    // ======== Public hooks kept from original ========
     public void enableAI(tetris.model.ai.Heuristic h) {
         useAI = true;
         aiPlayer = new AIPlayer(h);
     }
 
-    // in Gameplay (add next to enableAI)
     public void enableExternal(String host, int port) {
         useExternal = true;
         useAI = false;
@@ -166,13 +273,77 @@ public class Gameplay extends Application {
         }
     }
 
+    public void setSeed(long seed) { rng.setSeed(seed); }
 
-    private Stage mainStage;
+    // ======== Helpers used by states/tick ========
+    long getLastDropTime() { return lastDropTime; }
+    void setLastDropTime(long v) { lastDropTime = v; }
+    long getDropSpeedNanos() { return dropSpeed; }
+    void resetDropTimer() { lastDropTime = 0; }
+    void stopTimer() {
+        ScoreService.removeObserver(scoreObserver);
+        if (timer != null) timer.stop();
+    }
+
+    void stepBrainsOnce() {
+        // External reconnect opportunistically
+        if (useExternal && (net == null || !net.isConnected()) && !extControlsThisPiece && !extAnimating) {
+            tryReconnectAndRequestExternal();
+        }
+        // 1) External micro-step
+        if (extAnimating) {
+            doOneExternalStep();
+        } else if (aiAnimating) {
+            // 2) AI micro-step (only if external isn't animating)
+            doOneAiStep();
+        }
+    }
+
+    boolean tryGravity() { return tryBoost(); }
+
+    void lockPieceAndSpawn() {
+        lockPiece();
+        extAnimating = false;
+        aiAnimating  = false;
+        extControlsThisPiece = false;
+    }
+
+    void pauseMusicIfEnabled() { if (musicPlayer != null && config.isMusic()) musicPlayer.pause(); }
+    void resumeMusicIfEnabled(){ if (musicPlayer != null && config.isMusic()) musicPlayer.play(); }
+
+    void tryReconnectIfNeeded() {
+        if (useExternal && (net == null || !net.isConnected()) && !extControlsThisPiece && !extAnimating) {
+            tryReconnectAndRequestExternal();
+        }
+    }
+
+    // ======== Original helpers (all retained) ========
+    private long baseDropSpeed() {
+        return 1_000_000_000L / Math.max(1, config.getGameLevel());
+    }
+
+    public void applyAutoBoostIfNeeded() {
+        boolean botControlling =
+                (useAI && (aiAnimating || extControlsThisPiece)) ||
+                        (useExternal && extControlsThisPiece);
+
+        if (botControlling) {
+            dropSpeed = BOOST_NANOS;
+        } else {
+            dropSpeed = humanBoosting ? BOOST_NANOS : baseDropSpeed();
+        }
+    }
+
+    private String currentPlayerType() {
+        if (config.getPlayer1Type() == PlayerType.EXTERNAL) return "External";
+        if (config.getPlayer1Type() == PlayerType.AI) return "AI";
+        return "Human";
+    }
 
     private void showErrorAlert(String title, String header, String details) {
-        javafx.application.Platform.runLater(() -> {
+        Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.ERROR);
-            alert.initOwner(mainStage);
+            alert.initOwner(stage);
             alert.setTitle(title);
             alert.setHeaderText(header);
             alert.setContentText(details);
@@ -180,227 +351,7 @@ public class Gameplay extends Application {
         });
     }
 
-    private boolean humanInputEnabled() {
-        return !useAI && !useExternal && !extControlsThisPiece && !paused && !gameOver;
-    }
-
-    @Override
-    public void start(Stage stage) {
-        this.mainStage = stage;
-
-        // Create board with config size
-        board = new Board(config.getFieldWidth(), config.getFieldHeight());
-
-        dropSpeed = baseDropSpeed();
-
-        PlayerFactory.configureForType(this, config.getPlayer1Type(), "localhost", 3000);
-
-//        if (config.isAiPlay() && config.getPlayer1Type() == PlayerType.HUMAN) {
-//            enableAI(new tetris.model.ai.BetterHeuristic());
-//            applyAutoBoostIfNeeded();
-//        }
-
-        scoreLabel = new Label("Score: 0");
-        scoreLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
-        HBox topBar = new HBox(scoreLabel);
-        topBar.setAlignment(Pos.CENTER);
-        topBar.setPadding(new Insets(10));
-
-        boardCanvas = new Canvas(board.width() * cellSize, board.height() * cellSize);
-        boardCanvas.setStyle("-fx-border-color: gray; -fx-border-width: 2px;");
-
-        Button backButton = new Button("Back");
-        backButton.setOnAction(e -> {
-            if (gameOver) {
-                if (timer != null) timer.stop();
-                if (musicPlayer != null) musicPlayer.stop();
-                try {
-                    new MainMenu().start(stage);
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                }
-            } else {
-                boolean wasPaused = paused;
-                paused = true;
-
-                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-                alert.initOwner(stage);
-                alert.setTitle("Leave Game?");
-                alert.setHeaderText("Exit to Main Menu");
-                alert.setContentText("Your current game will be lost. Are you sure?");
-
-                ButtonType yes = new ButtonType("Yes", ButtonBar.ButtonData.OK_DONE);
-                ButtonType no  = new ButtonType("No",  ButtonBar.ButtonData.CANCEL_CLOSE);
-                alert.getButtonTypes().setAll(yes, no);
-
-                alert.showAndWait().ifPresent(response -> {
-                    if (response == yes) {
-                        if (timer != null) timer.stop();
-                        if (musicPlayer != null) musicPlayer.stop();
-                        try {
-                            new MainMenu().start(stage);
-                        } catch (Exception ex) {
-                            ex.printStackTrace();
-                        }
-                    } else {
-                        if (!wasPaused) {
-                            paused = false;
-                            lastDropTime = 0;
-                        }
-                    }
-                });
-            }
-        });
-
-        // Background Music
-        if (config.isMusic()) {
-            URL musicUrl = getClass().getResource("/sounds/background.mp3");
-            if (musicUrl != null) {
-                Media backgroundMusic = new Media(musicUrl.toExternalForm());
-                musicPlayer = new MediaPlayer(backgroundMusic);
-                musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
-                musicPlayer.setOnReady(() -> musicPlayer.play());
-            }
-        }
-
-        HBox backBar = new HBox(backButton);
-        backBar.setAlignment(Pos.CENTER);
-        backBar.setPadding(new Insets(10));
-
-        // --- Sidebar: create controls FIRST ---
-        nextCanvas = new Canvas(6 * cellSize, 6 * cellSize);
-        playerTypeLabel = new Label("Player: " + currentPlayerType());
-        playerTypeLabel.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
-
-        levelLabel = new Label("Level: " + config.getGameLevel());
-        levelLabel.setStyle("-fx-font-size: 13px;");
-
-        linesLabel = new Label("Lines: 0");
-        linesLabel.setStyle("-fx-font-size: 13px;");
-
-// Wrap the info labels in a styled VBox card
-        VBox infoBox = new VBox(6,
-                new Label("Info"),
-                playerTypeLabel,
-                levelLabel,
-                linesLabel
-        );
-        infoBox.setAlignment(Pos.TOP_CENTER);
-        infoBox.setPadding(new Insets(10));
-        infoBox.setSpacing(6);
-        infoBox.setStyle("""
-    -fx-background-color: #f4f4f4;
-    -fx-border-color: #888;
-    -fx-border-radius: 8;
-    -fx-background-radius: 8;
-    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 5, 0, 0, 1);
-""");
-
-        VBox rightBar = new VBox(
-                new Label("Next"),
-                nextCanvas,
-                new Separator(),
-                infoBox
-        );
-        rightBar.setAlignment(Pos.TOP_CENTER);
-        rightBar.setSpacing(12);
-        rightBar.setPadding(new Insets(10));
-        rightBar.setStyle("-fx-background-color: #fafafa;");
-
-
-
-        Label authorLabel = new Label("Version : v2.0.0");
-        HBox authorBar = new HBox(authorLabel);
-        authorBar.setAlignment(Pos.CENTER);
-        authorBar.setPadding(new Insets(5));
-
-        BorderPane root = new BorderPane();
-        root.setTop(topBar);
-        root.setCenter(boardCanvas);
-        root.setRight(rightBar);
-        root.setBottom(new VBox(backBar, authorBar));
-        root.setStyle("-fx-background-color: #f9f9f9;");
-        int sceneWidth  = board.width()  * cellSize + 40;
-        int sceneHeight = board.height() * cellSize + 120;
-        Scene scene = new Scene(root, sceneWidth, sceneHeight);
-        stage.setScene(scene);
-
-        // Controls
-        scene.setOnKeyPressed(e -> {
-            switch (e.getCode()) {
-                // Human-only movement
-                case A -> { if (humanInputEnabled()) { tryMoveLeft();  playSound("/sounds/move-turn.wav"); } }
-                case D -> { if (humanInputEnabled()) { tryMoveRight(); playSound("/sounds/move-turn.wav"); } }
-                case W, UP -> { if (humanInputEnabled()) { tryRotate(); playSound("/sounds/move-turn.wav"); } }
-
-                // Boost: human can toggle; AI ignores (always boosted below)
-                case X -> { if (humanInputEnabled()) boost(true); }
-
-                // Global controls allowed anytime
-                case P -> pauseGame();
-                case M -> toggleMusic();
-                case S -> toggleSound();
-            }
-        });
-
-        scene.setOnKeyReleased(e -> {
-            if (e.getCode() == KeyCode.X && humanInputEnabled()) {
-                boost(false);
-            }
-        });
-
-
-        stage.setTitle("Tetris");
-        stage.setMinWidth(500);
-        stage.show();
-        resetGameState();
-        spawnNewPiece();
-
-        // Tick loop — now mirrors GamePane: AI micro-steps then gravity
-        timer = new AnimationTimer() {
-            @Override public void handle(long now) {
-                applyAutoBoostIfNeeded();
-                if (!paused && !gameOver) {
-                    if (lastDropTime == 0) lastDropTime = now;
-                    else if (now - lastDropTime > dropSpeed) {
-                        if (useExternal && (net == null || !net.isConnected()) && !extControlsThisPiece && !extAnimating) {
-                            tryReconnectAndRequestExternal();
-                        }
-                        // 1) AI micro-step (never blocks gravity)
-                        if (extAnimating) {
-                            doOneExternalStep();
-                        } else if (aiAnimating) {
-                            // 2) AI micro-step (only if external isn't animating)
-                            doOneAiStep();
-                        }
-
-                        // 2) Gravity: drop exactly one row per tick
-                        boolean fell = tryBoost();
-
-                        // 3) If we couldn’t drop → lock the piece
-                        if (!fell) {
-                            lockPiece();
-                            extAnimating = false;
-                            aiAnimating  = false;
-                            extControlsThisPiece = false;
-                        }
-
-                        lastDropTime = now;
-                    }
-                }
-                draw(boardCanvas.getGraphicsContext2D());
-            }
-        };
-        timer.start();
-
-        URL soundUrl = getClass().getResource("/sounds/erase-line.wav");
-        if (soundUrl != null) {
-            Media beep = new Media(soundUrl.toExternalForm());
-            beepPlayer = new MediaPlayer(beep);
-            beepPlayer.setOnEndOfMedia(() -> beepPlayer.stop());
-        }
-    }
-
+    // ======== Bot micro-steps (present & unchanged semantics) ========
     private void doOneExternalStep() {
         switch (extPhase) {
             case ROTATE -> {
@@ -455,8 +406,6 @@ public class Gameplay extends Application {
         }
     }
 
-
-    // ======== AI micro-steps (same behavior as GamePane) ========
     private void doOneAiStep() {
         switch (aiPhase) {
             case ROTATE -> {
@@ -505,9 +454,10 @@ public class Gameplay extends Application {
         }
     }
 
-    private void tryMoveLeft()  { if (!paused && !extControlsThisPiece) move(-1, 0); }
-    private void tryMoveRight() { if (!paused && !extControlsThisPiece) move(+1, 0); }
-    private void tryRotate()    { if (!paused && !extControlsThisPiece) rotator.tryRotateCW(current, board); }
+    // ======== Movement (unchanged API) ========
+    private void tryMoveLeft()  { if (state.allowsHumanInput() && !extControlsThisPiece) move(-1, 0); }
+    private void tryMoveRight() { if (state.allowsHumanInput() && !extControlsThisPiece) move(+1, 0); }
+    private void tryRotate()    { if (state.allowsHumanInput() && !extControlsThisPiece) rotator.tryRotateCW(current, board); }
 
     private void move(int dx, int dy) {
         current.moveBy(dx, dy);
@@ -516,43 +466,43 @@ public class Gameplay extends Application {
 
     private void boost(boolean pressed) {
         if (useAI || useExternal) return;
-
         humanBoosting = pressed;
         applyAutoBoostIfNeeded();
     }
 
-
-    private void pauseGame() {
-        paused = !paused;
-        if (paused) {
-            if (musicPlayer != null && config.isMusic()) musicPlayer.pause();
-        } else {
-            if (musicPlayer != null && config.isMusic()) musicPlayer.play();
-            lastDropTime = 0;
-        }
+    // ======== Pause via state ========
+    private void togglePause() {
+        if (state instanceof PausedState) setState(new RunningState(this));
+        else if (state instanceof RunningState) setState(new PausedState(this));
+        // ignore in GameOverState
     }
 
     private void resetGameState() {
         board = new Board(config.getFieldWidth(), config.getFieldHeight());
         score = 0;
-        paused = false;
-        gameOver = false;
+        linesCleared = 0;
         lastDropTime = 0L;
-        dropSpeed = 1_000_000_000L / Math.max(1, config.getGameLevel());
-        if (scoreLabel != null) scoreLabel.setText("Score: 0");
+        dropSpeed = baseDropSpeed();
+        view.setScore(0);
+        view.setLines(0);
+
+        // 🟢 Let observers (UI, etc.) know we’re back to zero
+        ScoreService.notifyScoreChanged(0);
+
         nextType  = randomType();
         nextColor = randomColor();
         humanBoosting = false;
 
-        if (boardCanvas != null) {
-            boardCanvas.setWidth(board.width() * cellSize);
-            boardCanvas.setHeight(board.height() * cellSize);
-        }
+        Canvas boardCanvas = view.getBoardCanvas();
+        boardCanvas.setWidth(board.width() * cellSize);
+        boardCanvas.setHeight(board.height() * cellSize);
     }
+
 
     private void restartGame() {
         resetGameState();
         spawnNewPiece();
+        setState(new RunningState(this));
     }
 
     private void spawnNewPiece() {
@@ -582,9 +532,8 @@ public class Gameplay extends Application {
         for (Vec c : current.worldCells()) {
             if (c.y() < 0 || c.y() >= board.height() || c.x() < 0 || c.x() >= board.width()
                     || board.cells()[c.y()][c.x()] != null) {
-                gameOver = true;
-                if (musicPlayer != null) musicPlayer.stop();
-                handleGameOver();
+                // Transition to GameOver
+                setState(new GameOverState(this));
                 return;
             }
         }
@@ -617,18 +566,14 @@ public class Gameplay extends Application {
                                 applyAutoBoostIfNeeded();
                                 extControlsThisPiece = true;
                                 lastDropTime = 0L;
-
-                                System.out.println("[EXT] plan: rotate=" + extRotLeft + " targetLeft=" + extTargetX);
                             },
                             err -> {
-                                System.err.println("[EXT] request failed: " + err.getMessage());
                                 extAnimating = false;
                                 extPlayer = null;
                                 net = null;
                             }
                     );
                 } else {
-                    System.err.println("[EXT] Failed to reconnect to external server.");
                     extAnimating = false;
                     extPlayer = null;
                     net = null;
@@ -637,7 +582,6 @@ public class Gameplay extends Application {
                 extAnimating = false;
                 extPlayer = null;
                 net = null;
-                System.err.println("[EXT] Connection error: " + e.getMessage());
                 showErrorAlert(
                         "External Player Unavailable",
                         "Failed to reconnect for new piece. External control disabled for this game.",
@@ -660,7 +604,6 @@ public class Gameplay extends Application {
                         aiAnimating = true;
                         extControlsThisPiece = true;
                         lastDropTime = 0L;
-                        System.out.println("[AI] plan: rotate=" + aiRotLeft + " targetLeft=" + aiTargetX);
                     },
                     err -> { extControlsThisPiece = false; }
             );
@@ -677,8 +620,6 @@ public class Gameplay extends Application {
             net.connect();
             if (net.isConnected()) {
                 extPlayer = new ExternalPlayer(net);
-                System.out.println("[EXT] Reconnected mid-piece. Requesting move...");
-
                 extPlayer.requestMoveAsync(
                         snapshot(),
                         mv -> {
@@ -689,11 +630,8 @@ public class Gameplay extends Application {
                             extControlsThisPiece = true;
                             applyAutoBoostIfNeeded();
                             lastDropTime = 0L;
-
-                            System.out.println("[EXT] mid-piece plan: rotate=" + extRotLeft + " targetLeft=" + extTargetX);
                         },
                         err -> {
-                            System.err.println("[EXT] mid-piece request failed: " + err.getMessage());
                             extAnimating = false;
                             extPlayer = null;
                             net = null;
@@ -701,12 +639,10 @@ public class Gameplay extends Application {
                 );
             }
         } catch (Exception e) {
-            System.err.println("[EXT] mid-piece reconnect error: " + e.getMessage());
             extPlayer = null;
             net = null;
         }
     }
-
 
     private boolean tryBoost() {
         current.moveBy(0, +1);
@@ -719,9 +655,13 @@ public class Gameplay extends Application {
         board.lock(current, currentColor);
         int cleared = board.clearLines();
         score += ScoreService.pointsFor(cleared);
+
+        // 🟢 Notify all observers
+        ScoreService.notifyScoreChanged(score);
+
         linesCleared += cleared;
-        if (linesLabel != null) linesLabel.setText("Lines: " + linesCleared);
-        if (scoreLabel != null) scoreLabel.setText("Score: " + score);
+        view.setLines(linesCleared);
+        view.setScore(score); // harmless duplicate to keep existing behavior
 
         if (cleared > 0 && config.isSoundEffect() && beepPlayer != null) {
             beepPlayer.stop();
@@ -730,6 +670,7 @@ public class Gameplay extends Application {
 
         spawnNewPiece();
     }
+
 
     private void draw(GraphicsContext gc) {
         Color[][] grid = board.cells();
@@ -765,7 +706,8 @@ public class Gameplay extends Application {
             gc.strokeRect(px, py, cellSize, cellSize);
         }
 
-        if (paused || gameOver) {
+        // Overlay via state
+        if (state != null && (state.isPaused() || state.isGameOver())) {
             double w = W * cellSize, h = H * cellSize;
             gc.save();
             gc.setGlobalAlpha(0.45);
@@ -777,8 +719,8 @@ public class Gameplay extends Application {
             gc.setTextAlign(TextAlignment.CENTER);
             gc.setTextBaseline(VPos.CENTER);
 
-            String title = gameOver ? "Game Over" : "PAUSED";
-            String hint  = gameOver ? "Press Back to return" : "Press 'P' to resume";
+            String title = state.isGameOver() ? "Game Over" : "PAUSED";
+            String hint  = state.isGameOver() ? "Press Back to return" : "Press 'P' to resume";
 
             gc.setFont(Font.font("Arial", FontWeight.BOLD, 36));
             gc.fillText(title, w / 2.0, h / 2.0 - 18);
@@ -791,7 +733,7 @@ public class Gameplay extends Application {
     }
 
     private void drawNextPreview() {
-        if (nextCanvas == null) return;
+        Canvas nextCanvas = view.getNextCanvas();
         GraphicsContext ng = nextCanvas.getGraphicsContext2D();
         ng.clearRect(0, 0, nextCanvas.getWidth(), nextCanvas.getHeight());
 
@@ -818,8 +760,6 @@ public class Gameplay extends Application {
             ng.strokeRect(px, py, cellSize, cellSize);
         }
     }
-
-    public void setSeed(long seed) { rng.setSeed(seed); }
 
     private TetrominoType randomType() {
         TetrominoType[] vals = TetrominoType.values();
@@ -885,7 +825,7 @@ public class Gameplay extends Application {
 
         while (tryBoost()) { /* fall until blocked */ }
 
-        lockPiece();
+        lockPieceAndSpawn();
     }
 
     /** Try CW rotate 'r' times; on failure, attempt tiny horizontal nudges then retry. */
@@ -978,15 +918,18 @@ public class Gameplay extends Application {
         }
     }
 
+    // === State-driven game over ===
     private void handleGameOver() {
-        if (timer != null) timer.stop();
-        gameOver = true;
+        setState(new GameOverState(this));
+    }
 
+    // Called by GameOverState.onEnter()
+    public void onGameOverDialog() {
         playSound("/sounds/game-finish.wav");
 
-        javafx.application.Platform.runLater(() -> {
+        Platform.runLater(() -> {
             TextInputDialog dialog = new TextInputDialog("Player");
-            dialog.initOwner(mainStage);
+            dialog.initOwner(stage);
             dialog.setTitle("Game Over");
             dialog.setHeaderText("Your Score: " + score);
             dialog.setContentText("Enter your name:");
@@ -996,7 +939,7 @@ public class Gameplay extends Application {
                 if (name.isEmpty()) name = "Player";
                 HighScoreManager manager = new HighScoreManager();
                 String gameType = currentPlayerType();
-                TetrisConfig cfg = ConfigService.load();
+                TetrisConfig cfg = TetrisConfig.getInstance();
                 String mode = isMultiplayerGame() ? "Multiplayer" : "Single";
                 Score s = new Score(
                         name,
@@ -1007,12 +950,11 @@ public class Gameplay extends Application {
                         cfg.getGameLevel(),
                         mode
                 );
-
                 manager.addScore(s);
             });
 
             try {
-                new HighScore().start(mainStage);
+                new HighScore().start(stage);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -1022,7 +964,4 @@ public class Gameplay extends Application {
     private boolean isMultiplayerGame() {
         return false;
     }
-
-
-    public static void main(String[] args) { launch(args); }
 }
