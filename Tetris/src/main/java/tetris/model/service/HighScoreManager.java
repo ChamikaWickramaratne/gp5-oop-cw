@@ -6,51 +6,90 @@ import com.google.gson.reflect.TypeToken;
 
 import java.io.*;
 import java.lang.reflect.Type;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
 
 public class HighScoreManager {
-    private static final String FILE_NAME = "scores.json";
+    // 1) Primary, portable location: ~/.tetris/scores.json
+    private static final Path HOME_DIR = Paths.get(System.getProperty("user.home"), ".tetris");
+    private static final Path HOME_FILE = HOME_DIR.resolve("scores.json");
+
+    // 2) Fallback: working directory (next to the app)
+    private static final Path WD_FILE = Paths.get(System.getProperty("user.dir")).resolve("scores.json");
+
+    // Read-only default inside the JAR (optional)
+    private static final String CLASSPATH_DEFAULT = "/scores.json";
+
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private final Type scoreListType = new TypeToken<List<Score>>(){}.getType();
 
-    private String getFilePath() {
-        return Paths.get("src", "main", "resources", FILE_NAME).toString();
+    private Path resolveWritablePath() {
+        // Prefer ~/.tetris
+        try {
+            Files.createDirectories(HOME_DIR);
+            if (!Files.exists(HOME_FILE)) seedFromClasspathOrEmpty(HOME_FILE);
+            return HOME_FILE;
+        } catch (IOException ignored) { }
+
+        // Fallback: working directory
+        try {
+            if (!Files.exists(WD_FILE)) seedFromClasspathOrEmpty(WD_FILE);
+            return WD_FILE;
+        } catch (IOException ignored) { }
+
+        // Last resort: temp dir (non-ideal, but avoids crashing)
+        try {
+            Path tmp = Files.createTempDirectory("tetris");
+            Path f = tmp.resolve("scores.json");
+            seedFromClasspathOrEmpty(f);
+            return f;
+        } catch (IOException e) {
+            // Give up: return a path that will cause load to return empty and save to no-op
+            return null;
+        }
     }
 
-    // Load all scores from file
+    private void seedFromClasspathOrEmpty(Path target) throws IOException {
+        try (InputStream in = HighScoreManager.class.getResourceAsStream(CLASSPATH_DEFAULT)) {
+            if (in != null) {
+                Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                return;
+            }
+        }
+        Files.writeString(target, "[]", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    }
+
     public List<Score> loadScores() {
-        try (Reader reader = Files.newBufferedReader(Paths.get(getFilePath()))) {
-            return gson.fromJson(reader, scoreListType);
+        Path path = resolveWritablePath();
+        if (path == null) return new ArrayList<>();
+        try (Reader r = Files.newBufferedReader(path)) {
+            List<Score> list = gson.fromJson(r, scoreListType);
+            return (list != null) ? list : new ArrayList<>();
         } catch (IOException e) {
             return new ArrayList<>();
         }
     }
 
-    // Save the given list of scores to file
     public void saveScores(List<Score> scores) {
-        try (Writer writer = Files.newBufferedWriter(Paths.get(getFilePath()))) {
-            gson.toJson(scores, writer);
+        Path path = resolveWritablePath();
+        if (path == null) return; // nowhere to write, silently ignore
+        try (Writer w = Files.newBufferedWriter(path, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            gson.toJson(scores, w);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    // Add a new score (keeps only top 10 sorted)
     public void addScore(Score score) {
         List<Score> scores = loadScores();
         scores.add(score);
-        scores.sort((a, b) -> Integer.compare(b.points, a.points)); // highest first
-        if (scores.size() > 10) {
-            scores = new ArrayList<>(scores.subList(0, 10)); // ensure subList copy
-        }
+        scores.sort((a, b) -> Integer.compare(b.points, a.points));
+        if (scores.size() > 10) scores = new ArrayList<>(scores.subList(0, 10));
         saveScores(scores);
     }
 
-    // Clear all scores (used for "Clear High Scores" button)
     public void clear() {
-        saveScores(new ArrayList<>()); // write empty list to file
+        saveScores(new ArrayList<>());
     }
 }
