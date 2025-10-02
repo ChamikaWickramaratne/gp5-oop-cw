@@ -8,6 +8,7 @@ import javafx.geometry.Pos;
 import javafx.geometry.VPos;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.BorderPane;
@@ -105,6 +106,78 @@ public class GamePane extends BorderPane {
 
     // ========= STATE PATTERN =========
     private GameState state;
+
+    private String extHost = "localhost";
+    private int    extPort = 3000;
+
+    // Health check (external server liveness)
+    private java.util.concurrent.ScheduledExecutorService extHealthExec;
+    private volatile boolean extServerUp = true;
+    private final java.util.concurrent.atomic.AtomicBoolean extOutageAlerted =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    private void startExternalHealthMonitor(String host, int port) {
+        stopExternalHealthMonitor(); // safety if already running
+        extHealthExec = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "ext-health");
+            t.setDaemon(true);
+            return t;
+        });
+
+        // ping every 1s (tune as you like). Do NOT block FX thread.
+        extHealthExec.scheduleAtFixedRate(() -> {
+            boolean ok = pingExternal(host, port, 500); // 500ms timeout
+            boolean wasUp = extServerUp;
+            extServerUp = ok;
+
+            if (!ok && wasUp) {
+                // first time we noticed it’s down
+                if (extOutageAlerted.compareAndSet(false, true)) {
+                    notifyExternalIssue("External server not responding to health check.");
+                }
+            } else if (ok && !wasUp) {
+                // RECOVERED: clear alert state and late-join immediately for the current piece
+                extOutageAlerted.set(false);
+
+                // Try to reconnect + request a plan for the current piece now
+                // Do not run network on FX thread:
+                try {
+                    reconnectAndLateJoin();
+                } catch (Exception ignore) {
+                    // any UI updates happen inside reconnectAndLateJoin via Platform.runLater
+                }
+            }
+        }, 0, 1, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    private void stopExternalHealthMonitor() {
+        if (extHealthExec != null) {
+            extHealthExec.shutdownNow();
+            extHealthExec = null;
+        }
+    }
+
+    // Place this inside GamePane
+    private void notifyExternalIssue(String message) {
+        javafx.application.Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("External Server Disconnected");
+            alert.setHeaderText("External Mode Warning");
+            alert.setContentText(message + "\n\nThe game will remain in External mode, but moves may fail until the server is available again.");
+
+            alert.getDialogPane().setMinWidth(420);
+            alert.showAndWait();
+        });
+    }
+
+    private boolean pingExternal(String host, int port, int timeoutMs) {
+        try (java.net.Socket s = new java.net.Socket()) {
+            s.connect(new java.net.InetSocketAddress(host, port), timeoutMs);
+            return true; // handshake succeeded
+        } catch (Exception e) {
+            return false; // refused/timeout/unreachable
+        }
+    }
 
     public interface GameOverWatcher {
         void onHighScoreDialogShown(GamePane who);
@@ -475,6 +548,9 @@ public class GamePane extends BorderPane {
 
     public void enableExternal(String host, int port) throws Exception {
         useExternal = true;
+        this.extHost = host;
+        this.extPort = port;
+        startExternalHealthMonitor(host, port);
         if (playerTypeLabel != null) playerTypeLabel.setText("Player: " + currentPlayerType());
 
         net = new ExternalPlayerClient(host, port);
@@ -515,8 +591,50 @@ public class GamePane extends BorderPane {
         }
     }
 
+    // reconnect + request a plan for the CURRENT piece
+    private void reconnectAndLateJoin() {
+        if (!useExternal || gameOver || current == null || extControlsThisPiece) return;
+
+        try {
+            net = new ExternalPlayerClient(extHost, extPort);
+            net.connect();
+            if (!net.isConnected()) {
+                notifyExternalIssue("External server is reachable again, but connection failed.");
+                return;
+            }
+            extPlayer = new ExternalPlayer(net);
+
+            var snap = snapshot();
+            // mark that we’ve asked to avoid spamming (if you use extLateJoinAsked)
+            extLateJoinAsked = true;
+
+            extPlayer.requestMoveAsync(
+                    snap,
+                    mv -> javafx.application.Platform.runLater(() -> {
+                        aiRotLeft = (mv.opRotate & 3);
+                        aiTargetX = mv.opX;
+                        aiPhase   = AiPhase.ROTATE;
+                        aiAnimating = true;
+                        extControlsThisPiece = true;
+                        dropSpeed = BOOST_NANOS;
+                        lastDropTime = 0L;
+                        // optional: doOneAiStep();
+                    }),
+                    err -> javafx.application.Platform.runLater(() -> {
+                        // Request failed right after recovery — inform once and we’ll try again next piece/recovery.
+                        notifyExternalIssue("External move request failed after recovery: " + err.getMessage());
+                        extLateJoinAsked = false; // allow future attempts
+                    })
+            );
+        } catch (Exception e) {
+            notifyExternalIssue("Reconnection failed: " + e.getClass().getSimpleName() +
+                    (e.getMessage() != null ? (": " + e.getMessage()) : ""));
+        }
+    }
+
     public void dispose() {
         if (timer != null) timer.stop();
+        startExternalHealthMonitor("localhost", 3000);
         if (net != null) { net.disconnect(); net = null; extPlayer = null; }
     }
 

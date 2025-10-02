@@ -80,10 +80,24 @@ public class GameplayController {
     private int linesCleared = 0;
 
     // ======== External brain (network) ========
+    // ======== External brain (network) ========
     private boolean useExternal = false;
     private INetwork net;
     private Player extPlayer;
     private boolean extControlsThisPiece = false;
+
+    // >>> external host/port remembered for health & reconnect
+    private String extHost = "localhost";
+    private int    extPort = 3000;
+
+    // >>> health check state
+    private java.util.concurrent.ScheduledExecutorService extHealthExec;
+    private volatile boolean extServerUp = true;
+    private final java.util.concurrent.atomic.AtomicBoolean extOutageAlerted =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    // >>> avoid duplicate late-join requests during a piece
+    private boolean extLateJoinAsked = false;
 
     // ======== AI brain ========
     private boolean useAI = false;
@@ -131,6 +145,111 @@ public class GameplayController {
     private boolean humanInputEnabled() {
         return state != null && state.allowsHumanInput()
                 && !useAI && !useExternal && !extControlsThisPiece;
+    }
+
+    // >>> Simple TCP connect ping (non-blocking UI; call from executor)
+    private boolean pingExternal(String host, int port, int timeoutMs) {
+        try (java.net.Socket s = new java.net.Socket()) {
+            s.connect(new java.net.InetSocketAddress(host, port), timeoutMs);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // >>> UI-safe error alert (debounced by extOutageAlerted)
+    private void notifyExternalIssue(String message) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.initOwner(stage);
+            alert.setTitle("External Server Disconnected");
+            alert.setHeaderText("External Mode Warning");
+            alert.setContentText(message + "\n\nExternal control will resume automatically when the server is back.");
+            alert.getDialogPane().setMinWidth(420);
+            alert.showAndWait();
+        });
+    }
+
+    // >>> Start periodic health monitor (call when enabling External)
+    private void startExternalHealthMonitor(String host, int port) {
+        stopExternalHealthMonitor(); // safety
+        extHealthExec = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "ext-health");
+            t.setDaemon(true);
+            return t;
+        });
+        extHealthExec.scheduleAtFixedRate(() -> {
+            boolean ok = pingExternal(host, port, 500);
+            boolean wasUp = extServerUp;
+            extServerUp = ok;
+
+            if (!ok && wasUp) {
+                // became DOWN
+                if (extOutageAlerted.compareAndSet(false, true)) {
+                    notifyExternalIssue("External server not responding (timeout/refused).");
+                }
+            } else if (ok && !wasUp) {
+                // RECOVERED → try immediate reconnect + late-join
+                extOutageAlerted.set(false);
+                // Do not block this thread with UI; just attempt reconnect
+                reconnectAndLateJoin();
+            }
+        }, 0, 1, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    // >>> Stop monitor (call when leaving screen / stopping game)
+    private void stopExternalHealthMonitor() {
+        if (extHealthExec != null) {
+            extHealthExec.shutdownNow();
+            extHealthExec = null;
+        }
+    }
+
+    // >>> Reconnect & request a plan for the CURRENT piece (late-join)
+    private void reconnectAndLateJoin() {
+        // don't spam / don't fight existing plan
+        if (!useExternal || state == null || state.isGameOver()
+                || current == null || extControlsThisPiece || extAnimating) return;
+
+        // If you sometimes disconnect between pieces, it's fine—we connect fresh here
+        try {
+            net = new ExternalPlayerClient(extHost, extPort);
+            net.connect();
+            if (!net.isConnected()) {
+                notifyExternalIssue("External server reachable but connect() failed after recovery.");
+                return;
+            }
+            extPlayer = new ExternalPlayer(net);
+
+            var snap = snapshot();
+            extLateJoinAsked = true; // avoid duplicate late-join in your tick
+
+            extPlayer.requestMoveAsync(
+                    snap,
+                    mv -> {
+                        // Back onto FX thread for state mutations
+                        Platform.runLater(() -> {
+                            extRotLeft = (mv.opRotate & 3);
+                            extTargetX = mv.opX;
+                            extPhase   = ExtPhase.ROTATE;
+                            extAnimating = true;
+                            extControlsThisPiece = true;
+                            applyAutoBoostIfNeeded();
+                            lastDropTime = 0L;
+                        });
+                    },
+                    err -> {
+                        Platform.runLater(() -> {
+                            // Request failed immediately after recovery; allow future attempts
+                            notifyExternalIssue("External move request failed after recovery: " + err.getMessage());
+                            extLateJoinAsked = false;
+                        });
+                    }
+            );
+        } catch (Exception e) {
+            notifyExternalIssue("Reconnection failed: " + e.getClass().getSimpleName() +
+                    (e.getMessage() != null ? (": " + e.getMessage()) : ""));
+        }
     }
 
     // ======== Public wiring ========
@@ -255,7 +374,8 @@ public class GameplayController {
     public void enableExternal(String host, int port) {
         useExternal = true;
         useAI = false;
-
+        this.extHost = host;
+        this.extPort = port;
         net = new ExternalPlayerClient(host, port);
         extPlayer = new ExternalPlayer(net);
         try {
@@ -265,12 +385,8 @@ public class GameplayController {
         } catch (Exception ex) {
             extPlayer = null;
             net = null;
-            showErrorAlert(
-                    "External Player Unavailable",
-                    "Could not connect to the external player at " + host + ":" + port + ".",
-                    ex.getClass().getSimpleName() + (ex.getMessage()!=null?(": "+ex.getMessage()):"")
-            );
         }
+        startExternalHealthMonitor(host, port);
     }
 
     public void setSeed(long seed) { rng.setSeed(seed); }
@@ -283,11 +399,12 @@ public class GameplayController {
     void stopTimer() {
         ScoreService.removeObserver(scoreObserver);
         if (timer != null) timer.stop();
+        stopExternalHealthMonitor();
     }
 
     void stepBrainsOnce() {
         // External reconnect opportunistically
-        if (useExternal && (net == null || !net.isConnected()) && !extControlsThisPiece && !extAnimating) {
+        if (useExternal && (net == null || !net.isConnected()) && !extControlsThisPiece && !extAnimating && !extLateJoinAsked) {
             tryReconnectAndRequestExternal();
         }
         // 1) External micro-step
@@ -511,96 +628,108 @@ public class GameplayController {
         nextType  = randomType();
         nextColor = randomColor();
 
+        // reset per-piece animation/rotation trackers
         extAnimating = false;
-        aiAnimating = false;
+        aiAnimating  = false;
         extRotateAttempts = 0;
-        aiRotateAttempts = 0;
+        aiRotateAttempts  = 0;
         boolean requested = false;
 
+        // center spawn
         Vec[] base = type.offsets();
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
-        for (Vec v : base) {
-            if (v.x() < minX) minX = v.x();
-            if (v.x() > maxX) maxX = v.x();
-        }
+        for (Vec v : base) { if (v.x() < minX) minX = v.x(); if (v.x() > maxX) maxX = v.x(); }
         int shapeWidth = (maxX - minX + 1);
         int startCol = Math.max(0, (board.width() - shapeWidth) / 2 - minX);
 
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = color;
 
+        // top-out check
         for (Vec c : current.worldCells()) {
             if (c.y() < 0 || c.y() >= board.height() || c.x() < 0 || c.x() >= board.width()
                     || board.cells()[c.y()][c.x()] != null) {
-                // Transition to GameOver
                 setState(new GameOverState(this));
                 return;
             }
         }
 
+        // ========== External planner (per-piece connect, non-fatal on failure) ==========
         if (useExternal) {
             try {
+                // close any prior short-lived connection for previous piece
                 if (net != null) {
-                    try { net.disconnect(); } catch (Exception ignored) {}
+                    try { net.disconnect(); } catch (Exception ignore) {}
                 }
 
-                String host = "localhost";
-                int port = 3000;
-
-                net = new ExternalPlayerClient(host, port);
+                // extHost/extPort should be fields set in enableExternal(...)
+                net = new ExternalPlayerClient(extHost, extPort);
                 net.connect();
-                extPlayer = new ExternalPlayer(net);
 
                 if (net.isConnected()) {
+                    extPlayer = new ExternalPlayer(net);
+
+                    final var snap = snapshot();
                     requested = true;
                     extControlsThisPiece = true;
-                    var snap = snapshot();
+                    extLateJoinAsked = true; // avoid duplicate late-join attempts this piece
 
                     extPlayer.requestMoveAsync(
                             snap,
                             mv -> {
-                                extRotLeft = (mv.opRotate & 3);
-                                extTargetX = mv.opX;
-                                extPhase   = ExtPhase.ROTATE;
-                                extAnimating = true;
-                                applyAutoBoostIfNeeded();
-                                extControlsThisPiece = true;
-                                lastDropTime = 0L;
+                                // back on FX thread for state changes
+                                Platform.runLater(() -> {
+                                    extRotLeft = (mv.opRotate & 3);
+                                    extTargetX = mv.opX;
+                                    extPhase   = ExtPhase.ROTATE;
+                                    extAnimating = true;
+                                    applyAutoBoostIfNeeded();
+                                    extControlsThisPiece = true;
+                                    lastDropTime = 0L; // ensure immediate tick pacing
+                                });
                             },
                             err -> {
-                                extAnimating = false;
-                                extPlayer = null;
-                                net = null;
+                                // keep external mode; just report and allow future attempts
+                                Platform.runLater(() -> {
+                                    notifyExternalIssue("External move request failed: " + err.getMessage());
+                                    extAnimating = false;
+                                    extControlsThisPiece = false;
+                                    extLateJoinAsked = false; // allow retry on recovery/next piece
+                                });
                             }
                     );
                 } else {
-                    extAnimating = false;
+                    // not connected right now — show once; allow health monitor to retry
+//                    notifyExternalIssue("Could not connect to external server at "
+//                            + extHost + ":" + extPort + ".");
                     extPlayer = null;
-                    net = null;
+                    // keep net object as is or null — no control for this piece
+                    extControlsThisPiece = false;
+                    extLateJoinAsked = false;
                 }
             } catch (Exception e) {
-                extAnimating = false;
+                notifyExternalIssue("External connect error: "
+                        + e.getClass().getSimpleName()
+                        + (e.getMessage() != null ? (": " + e.getMessage()) : ""));
                 extPlayer = null;
-                net = null;
-                showErrorAlert(
-                        "External Player Unavailable",
-                        "Failed to reconnect for new piece. External control disabled for this game.",
-                        e.getClass().getSimpleName() + (e.getMessage() != null ? (": " + e.getMessage()) : "")
-                );
+                // keep External mode enabled; no control for this piece
+                extControlsThisPiece = false;
+                extLateJoinAsked = false;
             }
         }
 
+        // ========== AI planner (only if external didn't take this piece) ==========
         if (useAI && aiPlayer != null && !requested) {
             requested = true;
             extControlsThisPiece = true;
-            var snap = snapshot();
+            final var snap = snapshot();
             aiPlayer.requestMoveAsync(
                     snap,
                     mv -> {
-                        int r = mv.opRotate & 3;
+                        int r = (mv.opRotate & 3);
                         aiRotLeft = r;
                         aiTargetX = mv.opX;
-                        aiPhase = AiPhase.ROTATE;
+                        aiPhase   = AiPhase.ROTATE;
                         aiAnimating = true;
                         extControlsThisPiece = true;
                         lastDropTime = 0L;

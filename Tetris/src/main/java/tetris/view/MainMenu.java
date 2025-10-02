@@ -20,6 +20,13 @@ public class MainMenu extends Application {
     @Override
     public void start(Stage primaryStage) {
         double buttonWidth = 200;
+        primaryStage.setMaximized(false);
+        primaryStage.setFullScreen(false);
+        primaryStage.setMinWidth(UIConfigurations.WINDOW_WIDTH);
+        primaryStage.setMinHeight(UIConfigurations.WINDOW_HEIGHT);
+        primaryStage.setWidth(UIConfigurations.WINDOW_WIDTH);
+        primaryStage.setHeight(UIConfigurations.WINDOW_HEIGHT);
+        primaryStage.centerOnScreen();
 
         Button startButton     = new Button("Start");
         Button highScoreButton = new Button("High Score");

@@ -78,6 +78,7 @@ public class TwoPlayerBoard extends Application {
                         stage.setHeight(UIConfigurations.WINDOW_HEIGHT);
                         stage.centerOnScreen();
                         stopAndDisposeMusic();
+                        resetStageForMenu(stage);
                         new MainMenu().start(stage);
                     } catch (Exception ex) {
                         ex.printStackTrace();
@@ -114,8 +115,6 @@ public class TwoPlayerBoard extends Application {
         root.layout();
         stage.sizeToScene();
         stage.centerOnScreen();
-        stage.setMinWidth(stage.getWidth());
-        stage.setMinHeight(stage.getHeight());
         if (cfg.isMusic()) {
             initMusicPlayerIfNeeded();
             if (musicPlayer != null) {
@@ -180,9 +179,9 @@ public class TwoPlayerBoard extends Application {
             }
 
             private void maybeShowHighScores(Stage stage) {
-                // Only navigate when BOTH are game over AND BOTH saved a score
                 if (leftOver && rightOver && leftSaved && rightSaved) {
-                    stopAndDisposeMusic();        // make sure music stops
+                    stopAndDisposeMusic();
+                    resetStageForMenu(stage);
                     try { new HighScore().start(stage); }
                     catch (Exception e) { e.printStackTrace(); }
                 }
@@ -259,6 +258,16 @@ public class TwoPlayerBoard extends Application {
             try { musicPlayer.dispose(); } catch (Exception ignored) {}
             musicPlayer = null;
         }
+    }
+
+    private void resetStageForMenu(Stage stage) {
+        stage.setMaximized(false);
+        stage.setFullScreen(false);
+        stage.setMinWidth(UIConfigurations.WINDOW_WIDTH);
+        stage.setMinHeight(UIConfigurations.WINDOW_HEIGHT);
+        stage.setWidth(UIConfigurations.WINDOW_WIDTH);
+        stage.setHeight(UIConfigurations.WINDOW_HEIGHT);
+        stage.centerOnScreen();
     }
 
     public static void main(String[] args) { launch(args); }

@@ -102,10 +102,18 @@ public class SinglePlayerView {
 
     public void attachTo(Stage stage, String title, int pxWidth, int pxHeight) {
         stage.setTitle(title);
-        stage.setMinWidth(500);
+
+        // Do NOT lock the stage's min size here (that "sticks" across screens)
+        stage.setMaximized(false);
+        stage.setFullScreen(false);
+
+        // Set the scene and let the stage size to it
         stage.setScene(makeScene(pxWidth, pxHeight));
+        stage.sizeToScene();        // fit window to this scene's preferred size
+        stage.centerOnScreen();
         stage.show();
     }
+
 
     // ---- Getters the controller needs
     public Canvas getBoardCanvas() { return boardCanvas; }

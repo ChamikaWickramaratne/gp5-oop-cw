@@ -45,6 +45,13 @@ public class HighScore extends Application {
 
     @Override
     public void start(Stage stage) {
+        stage.setMaximized(false);
+        stage.setFullScreen(false);
+        stage.setMinWidth(UIConfigurations.WINDOW_WIDTH);
+        stage.setMinHeight(UIConfigurations.WINDOW_HEIGHT);
+        stage.setWidth(UIConfigurations.WINDOW_WIDTH);
+        stage.setHeight(UIConfigurations.WINDOW_HEIGHT);
+        stage.centerOnScreen();
         Label titleLabel = new Label("High Scores");
         titleLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
         HBox titleBox = new HBox(titleLabel);
