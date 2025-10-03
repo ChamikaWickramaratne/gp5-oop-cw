@@ -1,4 +1,4 @@
-package tetris.ui;
+package tetris.view;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -23,35 +23,28 @@ public class SplashScreen extends Application {
     @Override
     public void start(Stage splashStage) {
         splashStage.initStyle(StageStyle.UNDECORATED);
-
-        // Load splash image
         URL imageUrl = getClass().getClassLoader().getResource("pic3.png");
         if (imageUrl == null) {
             throw new IllegalStateException("pic3.png not found in resources!");
         }
-
         ImageView splashImage = new ImageView(new Image(imageUrl.toExternalForm()));
         splashImage.setPreserveRatio(false);
         splashImage.setFitWidth(400);
         splashImage.setFitHeight(350);
 
-        // Create info labels
         Label groupLabel = new Label("Group ID: GP05");
         Label courseLabel = new Label("Course Code: 7010ICT");
         Label versionLabel = new Label("Version: v2.0.0");
 
-        // Style labels
         String infoStyle = "-fx-font-size: 12px; -fx-text-fill: white;";
         groupLabel.setStyle(infoStyle);
         courseLabel.setStyle(infoStyle);
         versionLabel.setStyle(infoStyle);
 
-        // Create animated loading label
         Label loadingLabel = new Label("Loading");
         loadingLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: white;");
         animateLoadingText(loadingLabel);
 
-        // Add everything to VBox
         VBox content = new VBox(
                 splashImage,
                 groupLabel,
@@ -70,11 +63,10 @@ public class SplashScreen extends Application {
         splashStage.centerOnScreen();
         splashStage.show();
 
-        // Delay then load MainMenu
         Task<Void> loadTask = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                Thread.sleep(4000); // 4 seconds delay
+                Thread.sleep(500);
                 return null;
             }
 
@@ -106,6 +98,6 @@ public class SplashScreen extends Application {
     }
 
     public static void main(String[] args) {
-        launch(args); // Entry point
+        launch(args);
     }
 }
