@@ -1,12 +1,11 @@
-// src/main/java/tetris/config/TetrisConfig.java
 package tetris.config;
+
+import tetris.model.PlayerType;
 
 public class TetrisConfig {
 
-    // ---- Singleton holder ----
     private static volatile TetrisConfig instance;
 
-    // ---- Fields (with defaults) ----
     private int fieldWidth  = 10;
     private int fieldHeight = 20;
     private int gameLevel   = 1;
@@ -16,15 +15,12 @@ public class TetrisConfig {
     private PlayerType player1Type = PlayerType.HUMAN;
     private PlayerType player2Type = PlayerType.HUMAN;
 
-    // ✅ Jackson needs a public or protected no-arg constructor
     public TetrisConfig() {}
 
-    // ---- Singleton API ----
     public static TetrisConfig getInstance() {
         if (instance == null) {
             synchronized (TetrisConfig.class) {
                 if (instance == null) {
-                    // 🔥 Load immediately from disk on first access
                     instance = ConfigService.load();
                 }
             }
@@ -36,7 +32,6 @@ public class TetrisConfig {
         instance = (cfg != null) ? cfg : new TetrisConfig();
     }
 
-    // ---- Getters & setters ----
     public int getFieldWidth() { return fieldWidth; }
     public void setFieldWidth(int v) { fieldWidth = v; }
 

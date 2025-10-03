@@ -1,7 +1,6 @@
 package tetris.controller;
 
-import tetris.config.PlayerType;
-//import tetris.view.Gameplay;
+import tetris.model.PlayerType;
 
 public final class PlayerFactory {
     private PlayerFactory() {}

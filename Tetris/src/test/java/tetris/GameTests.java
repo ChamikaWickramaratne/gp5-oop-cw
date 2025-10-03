@@ -46,7 +46,7 @@ class GameTests {
     void testHighScoreSaveAndLoad() {
         HighScoreManager manager = new HighScoreManager();
         List<Score> scores = new ArrayList<>();
-        scores.add(new Score("Jay", 500));
+        scores.add(new Score("Jay", 500,"SinglePlayer",15,10,1, "HUMAN"));
         manager.saveScores(scores);
 
         List<Score> loaded = manager.loadScores();

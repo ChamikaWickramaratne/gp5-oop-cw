@@ -1,4 +1,3 @@
-// src/main/java/tetris/controller/state/RunningState.java
 package tetris.controller;
 
 public class RunningState extends BaseState {
@@ -7,11 +6,10 @@ public class RunningState extends BaseState {
 
     @Override public void onEnter() {
         c.resumeMusicIfEnabled();
-        c.resetDropTimer(); // avoid instant drop spike after resume
+        c.resetDropTimer();
     }
 
     @Override public void onTick(long now) {
-        // Mirrors your old "if (!paused && !gameOver) { ... }" tick body
         c.applyAutoBoostIfNeeded();
         c.tryReconnectIfNeeded();
 
@@ -21,11 +19,11 @@ public class RunningState extends BaseState {
         }
 
         if (now - c.getLastDropTime() > c.getDropSpeedNanos()) {
-            c.stepBrainsOnce();            // AI/External micro-step
-            boolean fell = c.tryGravity(); // drop exactly one row
+            c.stepBrainsOnce();
+            boolean fell = c.tryGravity();
 
             if (!fell) {
-                c.lockPieceAndSpawn();     // also clears flags
+                c.lockPieceAndSpawn();
             }
             c.setLastDropTime(now);
         }

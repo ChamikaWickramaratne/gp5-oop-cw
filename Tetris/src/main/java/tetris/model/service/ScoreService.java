@@ -1,4 +1,3 @@
-// src/main/java/tetris/model/service/ScoreService.java
 package tetris.model.service;
 
 import java.util.ArrayList;
@@ -21,7 +20,6 @@ public final class ScoreService {
         return points;
     }
 
-    // 🟢 Observer registration
     public static void addObserver(ScoreObserver observer) {
         observers.add(observer);
     }
@@ -30,7 +28,6 @@ public final class ScoreService {
         observers.remove(observer);
     }
 
-    // 🟡 Notify listeners of a score change
     public static void notifyScoreChanged(int newScore) {
         for (ScoreObserver obs : observers) {
             obs.onScoreChanged(newScore);

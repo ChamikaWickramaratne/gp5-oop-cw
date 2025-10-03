@@ -1,4 +1,3 @@
-// src/main/java/tetris/controller/state/GameOverState.java
 package tetris.controller;
 
 public class GameOverState extends BaseState {
@@ -7,7 +6,7 @@ public class GameOverState extends BaseState {
 
     @Override public void onEnter() {
         c.stopTimer();
-        c.onGameOverDialog(); // name entry + high score screen
+        c.onGameOverDialog();
     }
     @Override public boolean isGameOver() { return true; }
     @Override public boolean allowsHumanInput() { return false; }

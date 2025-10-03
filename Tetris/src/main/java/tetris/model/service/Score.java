@@ -9,14 +9,6 @@ public class Score {
     public int level;
     public String mode;
 
-    public Score(String playerName, int points) {
-        this(playerName, points, "Human");
-    }
-
-    public Score(String playerName, int points, String gameType) {
-        this(playerName, points, gameType, 10, 20, 1, "Single");
-    }
-
     public Score(String playerName,
                  int points,
                  String gameType,
@@ -33,7 +25,6 @@ public class Score {
         this.mode = mode;
     }
 
-    // Getters for JavaFX / PropertyValueFactory
     public String getPlayerName() { return playerName; }
     public int getPoints() { return points; }
     public String getGameType() { return gameType; }
@@ -41,9 +32,4 @@ public class Score {
     public int getBoardHeight() { return boardHeight; }
     public int getLevel() { return level; }
     public String getMode() { return mode; }
-
-    // Convenience helper
-    public String getBoardSizeLabel() {
-        return boardWidth + "×" + boardHeight;
-    }
 }

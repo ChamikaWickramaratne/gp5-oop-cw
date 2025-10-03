@@ -7,7 +7,7 @@ import tetris.model.Vec;
 
 public abstract class Piece {
     protected final TetrominoType type;
-    protected int rotation; // 0..3
+    protected int rotation;
 
     protected Piece(TetrominoType type) { this.type = type; }
 

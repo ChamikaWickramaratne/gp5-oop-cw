@@ -4,6 +4,7 @@
   "gameLevel" : 1,
   "music" : true,
   "soundEffect" : true,
-  "aiPlay" : false,
-  "extendMode" : false
+  "extendMode" : false,
+  "player1Type" : "HUMAN",
+  "player2Type" : "HUMAN"
 }

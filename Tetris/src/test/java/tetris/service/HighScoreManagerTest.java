@@ -1,6 +1,7 @@
 package tetris.service;
 
 import org.junit.jupiter.api.Test;
+import tetris.model.PlayerType;
 import tetris.model.service.Score;
 
 import java.util.List;
@@ -12,9 +13,9 @@ class HighScoreManagerTest {
     void testAddScoreAndKeepSorted() {
         FakeHighScoreManager fake = new FakeHighScoreManager();
 
-        fake.addScore(new Score("Alice", 300));
-        fake.addScore(new Score("Bob", 1000));
-        fake.addScore(new Score("Charlie", 600));
+        fake.addScore(new Score("Alice", 300,"SinglePlayer",15,10,1, "HUMAN"));
+        fake.addScore(new Score("Bob", 1000,"SinglePlayer",15,10,1, "HUMAN"));
+        fake.addScore(new Score("Charlie", 600,"SinglePlayer",15,10,1, "HUMAN"));
 
         List<Score> scores = fake.loadScores();
 

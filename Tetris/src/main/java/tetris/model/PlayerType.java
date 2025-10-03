@@ -1,4 +1,4 @@
-package tetris.config;
+package tetris.model;
 
 public enum PlayerType {
     HUMAN,
