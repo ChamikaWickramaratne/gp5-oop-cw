@@ -1,4 +1,3 @@
-// players/ExternalPlayer.java
 package tetris.controller;
 
 import java.util.function.Consumer;
@@ -33,6 +32,6 @@ public class ExternalPlayer implements Player, NetworkListener {
         if (onError != null) Platform.runLater(() -> onError.accept(t));
     }
 
-    @Override public void onConnectionLost()      { /* optional */ }
-    @Override public void onConnectionRecovered() { /* optional */ }
+    @Override public void onConnectionLost()      { }
+    @Override public void onConnectionRecovered() { }
 }

@@ -1,4 +1,3 @@
-// src/main/java/tetris/config/ConfigService.java
 package tetris.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,10 +17,6 @@ public final class ConfigService {
 
     private ConfigService() {}
 
-    /**
-     * Loads config from disk. If file is missing or corrupt, returns defaults.
-     * Also updates the TetrisConfig singleton.
-     */
     public static TetrisConfig load() {
         TetrisConfig cfg = null;
         try {
@@ -32,17 +27,13 @@ public final class ConfigService {
             e.printStackTrace();
         }
         if (cfg == null) {
-            cfg = new TetrisConfig(); // fallback defaults
+            cfg = new TetrisConfig();
         }
 
-        // ✅ Make sure singleton stays synced with disk state
         TetrisConfig.setInstance(cfg);
         return cfg;
     }
 
-    /**
-     * Saves the given config to disk and updates the singleton.
-     */
     public static void save(TetrisConfig cfg) {
         try {
             byte[] json = MAPPER.writeValueAsBytes(cfg);
@@ -55,16 +46,5 @@ public final class ConfigService {
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
-
-    public static Path configPath() {
-        return CONFIG_PATH;
-    }
-
-    /**
-     * Force-refreshes the singleton by reloading from disk.
-     */
-    public static TetrisConfig reloadSingleton() {
-        return load();
     }
 }

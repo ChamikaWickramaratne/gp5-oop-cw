@@ -1,9 +1,10 @@
 {
-  "fieldWidth" : 7,
-  "fieldHeight" : 18,
+  "fieldWidth" : 15,
+  "fieldHeight" : 30,
   "gameLevel" : 1,
-  "music" : true,
-  "soundEffect" : true,
-  "aiPlay" : false,
-  "extendMode" : false
+  "music" : false,
+  "soundEffect" : false,
+  "extendMode" : true,
+  "player1Type" : "HUMAN",
+  "player2Type" : "AI"
 }

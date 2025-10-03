@@ -29,7 +29,6 @@ public class ExternalPlayerClient implements INetwork {
     @Override
     public void connect() {
         try {
-            // 1) Establish socket & streams synchronously
             socket = new Socket(host, port);
             out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true); // auto-flush
             in  = new BufferedReader(new InputStreamReader(socket.getInputStream()));
@@ -37,7 +36,6 @@ public class ExternalPlayerClient implements INetwork {
             System.out.println("[client] connected to " + host + ":" + port);
             if (listener != null) listener.onConnectionRecovered();
 
-            // 2) Start the read loop on its own thread
             readerExec = Executors.newSingleThreadExecutor();
             readerExec.submit(this::readLoop);
 
@@ -67,13 +65,13 @@ public class ExternalPlayerClient implements INetwork {
     public void sendGameAsync(PureGame game) {
         io.submit(() -> {
             try {
-                if (out == null) { // defensive: shouldn’t happen with sync connect
+                if (out == null) {
                     System.out.println("[client] out is null; dropping snapshot");
                     return;
                 }
                 String payload = mapper.writeValueAsString(game);
                 System.out.println("[client] -> " + payload);
-                out.println(payload); // newline-delimited
+                out.println(payload);
             } catch (Exception e) {
                 if (listener != null) listener.onProtocolError("send failed", e);
             }

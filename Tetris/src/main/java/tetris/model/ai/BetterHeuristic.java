@@ -1,8 +1,6 @@
-// tetris/ai/BetterHeuristic.java
 package tetris.model.ai;
 
 public class BetterHeuristic implements Heuristic {
-    // Start weights (tune!):
     private final double wLines =  +12.0;  // reward lines more
     private final double wHoles =  -9.0;   // punish holes more
     private final double wHeight = -0.45;  // aggregate height
@@ -15,14 +13,12 @@ public class BetterHeuristic implements Heuristic {
     public double evaluate(int[][] b, int linesCleared) {
         int H = b.length, W = b[0].length;
 
-        // Column heights
         int[] heights = new int[W];
         for (int x=0; x<W; x++) {
             int y=0; while (y<H && b[y][x]==0) y++;
             heights[x] = H - y;
         }
 
-        // Holes
         int holes = 0;
         for (int x=0; x<W; x++) {
             boolean seen = false;
@@ -32,12 +28,10 @@ public class BetterHeuristic implements Heuristic {
             }
         }
 
-        // Aggregate height & bumpiness
         int agg = 0, bump = 0;
         for (int x=0; x<W; x++) agg += heights[x];
         for (int x=0; x<W-1; x++) bump += Math.abs(heights[x]-heights[x+1]);
 
-        // Wells
         int wells = 0;
         for (int x=0; x<W; x++) {
             int left = (x==0) ? Integer.MAX_VALUE : heights[x-1];
@@ -46,28 +40,26 @@ public class BetterHeuristic implements Heuristic {
             if (heights[x] < neighborMin) wells += (neighborMin - heights[x]);
         }
 
-        // Row transitions
         int rowTrans = 0;
         for (int y=0; y<H; y++) {
-            int prev = 1; // treat outside as filled
+            int prev = 1;
             for (int x=0; x<W; x++) {
                 int cur = (b[y][x] != 0) ? 1 : 0;
                 if (cur != prev) rowTrans++;
                 prev = cur;
             }
-            if (prev == 0) rowTrans++; // right border
+            if (prev == 0) rowTrans++;
         }
 
-        // Column transitions
         int colTrans = 0;
         for (int x=0; x<W; x++) {
-            int prev = 1; // top border filled
+            int prev = 1;
             for (int y=0; y<H; y++) {
                 int cur = (b[y][x] != 0) ? 1 : 0;
                 if (cur != prev) colTrans++;
                 prev = cur;
             }
-            if (prev == 0) colTrans++; // bottom border
+            if (prev == 0) colTrans++;
         }
 
         return wLines*linesCleared

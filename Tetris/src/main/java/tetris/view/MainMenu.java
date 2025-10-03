@@ -1,4 +1,3 @@
-// src/main/java/tetris/view/MainMenu.java
 package tetris.view;
 
 import javafx.application.Application;
@@ -10,8 +9,6 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
-
-import tetris.config.ConfigService;
 import tetris.config.TetrisConfig;
 import tetris.controller.GameplayController;
 
@@ -39,16 +36,13 @@ public class MainMenu extends Application {
             btn.setStyle("-fx-font-size: 14px; -fx-padding: 10px 20px;");
         }
 
-        // Single entry point for starting the game based on config.extendMode
         startButton.setOnAction(e -> {
             try {
                 TetrisConfig cfg = TetrisConfig.getInstance();
                 boolean extend = cfg.isExtendMode();
                 if (extend) {
-                    // Multiplayer path
                     new TwoPlayerBoard().start(primaryStage);
                 } else {
-                    // Single player path
                     GameplayController controller = new GameplayController();
                     controller.start(primaryStage);
                 }

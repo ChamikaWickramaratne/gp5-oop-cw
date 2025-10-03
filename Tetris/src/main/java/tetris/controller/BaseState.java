@@ -1,4 +1,3 @@
-// src/main/java/tetris/controller/state/BaseState.java
 package tetris.controller;
 
 public abstract class BaseState implements GameState {

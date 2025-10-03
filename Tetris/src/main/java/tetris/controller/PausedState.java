@@ -1,4 +1,3 @@
-// src/main/java/tetris/controller/state/PausedState.java
 package tetris.controller;
 
 public class PausedState extends BaseState {
@@ -7,5 +6,5 @@ public class PausedState extends BaseState {
 
     @Override public void onEnter() { c.pauseMusicIfEnabled(); }
     @Override public boolean isPaused() { return true; }
-    @Override public boolean allowsHumanInput() { return false; } // ignore moves while paused
+    @Override public boolean allowsHumanInput() { return false; }
 }

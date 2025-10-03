@@ -10,7 +10,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import tetris.config.ConfigService;
-import tetris.config.PlayerType;
+import tetris.model.PlayerType;
 import tetris.config.TetrisConfig;
 
 public class ConfigScreen extends Application {
@@ -23,7 +23,6 @@ public class ConfigScreen extends Application {
     }
 
     private void showConfigScreen(Stage stage) {
-        // 1) Load existing config (or defaults)
         config = ConfigService.load();
 
         Label titleLabel = new Label("Configuration");
@@ -32,7 +31,6 @@ public class ConfigScreen extends Application {
         titleBox.setAlignment(Pos.CENTER);
         titleBox.setPadding(new Insets(0, 0, 20, 0));
 
-        // Field Width
         HBox fieldWidthRow = new HBox(10);
         fieldWidthRow.setAlignment(Pos.CENTER_LEFT);
         Label fieldWidthLabel = new Label("Field Width (No of cells):");
@@ -47,7 +45,6 @@ public class ConfigScreen extends Application {
         HBox.setHgrow(fieldWidthSlider, Priority.ALWAYS);
         fieldWidthRow.getChildren().addAll(fieldWidthLabel, fieldWidthSlider, fieldWidthValue);
 
-        // Field Height
         HBox fieldHeightRow = new HBox(10);
         fieldHeightRow.setAlignment(Pos.CENTER_LEFT);
         Label fieldHeightLabel = new Label("Field Height (No of cells):");
@@ -62,7 +59,6 @@ public class ConfigScreen extends Application {
         HBox.setHgrow(fieldHeightSlider, Priority.ALWAYS);
         fieldHeightRow.getChildren().addAll(fieldHeightLabel, fieldHeightSlider, fieldHeightValue);
 
-        // Game Level
         HBox fieldGameRow = new HBox(10);
         fieldGameRow.setAlignment(Pos.CENTER_LEFT);
         Label gameLevelLabel = new Label("Game Level:");
@@ -77,7 +73,6 @@ public class ConfigScreen extends Application {
         HBox.setHgrow(gameLevelSlider, Priority.ALWAYS);
         fieldGameRow.getChildren().addAll(gameLevelLabel, gameLevelSlider, fieldGameValue);
 
-        // Music
         CheckBox musicCheckBox = new CheckBox("Music");
         musicCheckBox.setSelected(config.isMusic());
         Label musicValue = new Label(config.isMusic() ? "On" : "Off");
@@ -88,7 +83,6 @@ public class ConfigScreen extends Application {
         HBox musicRow = new HBox(10, musicCheckBox, musicValue);
         musicRow.setAlignment(Pos.TOP_LEFT);
 
-        // Sound Effect
         CheckBox soundEffectCheckBox = new CheckBox("Sound Effect");
         soundEffectCheckBox.setSelected(config.isSoundEffect());
         Label soundValue = new Label(config.isSoundEffect() ? "On" : "Off");
@@ -99,18 +93,6 @@ public class ConfigScreen extends Application {
         HBox soundRow = new HBox(10, soundEffectCheckBox, soundValue);
         soundRow.setAlignment(Pos.TOP_LEFT);
 
-        // AI Play
-//        CheckBox aiPlayCheckBox = new CheckBox("AI Play");
-//        aiPlayCheckBox.setSelected(config.isAiPlay());
-//        Label aiValue = new Label(config.isAiPlay() ? "On" : "Off");
-//        aiPlayCheckBox.selectedProperty().addListener((obs, o, n) -> {
-//            aiValue.setText(n ? "On" : "Off");
-//            config.setAiPlay(n);
-//        });
-//        HBox aiRow = new HBox(10, aiPlayCheckBox, aiValue);
-//        aiRow.setAlignment(Pos.TOP_LEFT);
-
-        // Extend Mode
         CheckBox extendModeCheckBox = new CheckBox("Extend Mode");
         extendModeCheckBox.setSelected(config.isExtendMode());
         Label extendValue = new Label(config.isExtendMode() ? "On" : "Off");

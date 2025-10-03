@@ -1,4 +1,3 @@
-// src/main/java/tetris/ui/TwoPlayerBoard.java
 package tetris.view;
 
 import javafx.application.Application;
@@ -15,13 +14,11 @@ import javafx.scene.layout.HBox;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.stage.Stage;
-
 import tetris.config.ConfigService;
 import tetris.config.TetrisConfig;
-import tetris.config.PlayerType;
+import tetris.model.PlayerType;
 import tetris.controller.GamePane;
 import tetris.controller.PlayerFactory;
-
 import java.net.URL;
 
 public class TwoPlayerBoard extends Application {
@@ -35,28 +32,19 @@ public class TwoPlayerBoard extends Application {
 
     @Override
     public void start(Stage stage) {
-        // Load config
         TetrisConfig cfg = ConfigService.load();
-
         GamePane left  = new GamePane();
         GamePane right = new GamePane();
-
         long seed = System.currentTimeMillis();
         left.setSeed(seed);
         right.setSeed(seed);
-
-        // ===== Configure brains from config =====
         configureSide(left,  cfg.getPlayer1Type(), stage);
         configureSide(right, cfg.getPlayer2Type(), stage);
-
-        // Decide who can accept human input
         final boolean leftHuman  = (cfg.getPlayer1Type() == PlayerType.HUMAN);
         final boolean rightHuman = (cfg.getPlayer2Type() == PlayerType.HUMAN);
 
-        // --- UI layout ---
         Button back = new Button("Back");
         back.setOnAction(e -> {
-            // ✅ Pause both sides while the dialog is open (only if not game over)
             left.pauseForMenu();
             right.pauseForMenu();
 
@@ -84,7 +72,6 @@ public class TwoPlayerBoard extends Application {
                         ex.printStackTrace();
                     }
                 } else {
-                    // ✅ User cancelled: resume both sides and refocus
                     left.resumeFromMenu();
                     right.resumeFromMenu();
                     javafx.application.Platform.runLater(() -> stage.getScene().getRoot().requestFocus());
@@ -104,7 +91,6 @@ public class TwoPlayerBoard extends Application {
         root.setCenter(boards);
         root.setBottom(bottomBar);
 
-        // Size to content so both panes fit perfectly
         Scene scene = new Scene(root);
         stage.setScene(scene);
         stage.setTitle("Tetris — Two Player");
@@ -125,22 +111,17 @@ public class TwoPlayerBoard extends Application {
         stage.show();
         javafx.application.Platform.runLater(root::requestFocus);
 
-        // ===== Key handling (HUMAN-only control per side) =====
         scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             switch (e.getCode()) {
-                // Left side human controls
                 case A -> { if (leftHuman)  left.tryMoveLeft(); }
                 case D -> { if (leftHuman)  left.tryMoveRight(); }
                 case W -> { if (leftHuman)  left.tryRotate(); }
                 case S -> { if (leftHuman)  left.boost(true); }
-
-                // Right side human controls
                 case LEFT  -> { if (rightHuman) right.tryMoveLeft(); }
                 case RIGHT -> { if (rightHuman) right.tryMoveRight(); }
                 case UP    -> { if (rightHuman) right.tryRotate(); }
                 case DOWN  -> { if (rightHuman) right.boost(true); }
 
-                // Global pause toggles both
                 case P -> { left.pauseToggle(); right.pauseToggle(); }
                 case M -> toggleMusic();
                 case N -> toggleSound();
@@ -168,12 +149,12 @@ public class TwoPlayerBoard extends Application {
                 }
             }
 
-            @Override public void onGameOverReached(GamePane who) {          // NEW
+            @Override public void onGameOverReached(GamePane who) {
                 if (who == left) leftOver = true; else rightOver = true;
                 maybeShowHighScores(stage);
             }
 
-            @Override public void onScoreSaved(GamePane who) {               // NEW
+            @Override public void onScoreSaved(GamePane who) {
                 if (who == left) leftSaved = true; else rightSaved = true;
                 maybeShowHighScores(stage);
             }
@@ -202,7 +183,6 @@ public class TwoPlayerBoard extends Application {
     private void configureSide(GamePane pane, PlayerType type, Stage stage) {
         try {
             PlayerFactory.configureForType(pane, type, externalHost, externalPort);
-            // Optional: keep your "ensure fast gravity for AI" line if you like
             if (type == PlayerType.AI) pane.boost(true);
         } catch (Exception ex) {
             Alert alert = new Alert(Alert.AlertType.WARNING);
@@ -214,7 +194,6 @@ public class TwoPlayerBoard extends Application {
             alert.showAndWait();
         }
     }
-
 
     private void toggleMusic() {
         TetrisConfig config = TetrisConfig.getInstance();
@@ -251,7 +230,6 @@ public class TwoPlayerBoard extends Application {
         musicPlayer.setCycleCount(MediaPlayer.INDEFINITE);
     }
 
-    // TwoPlayerBoard.java
     private void stopAndDisposeMusic() {
         if (musicPlayer != null) {
             try { musicPlayer.stop(); } catch (Exception ignored) {}

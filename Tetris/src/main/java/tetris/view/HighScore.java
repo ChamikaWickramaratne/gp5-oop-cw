@@ -19,9 +19,9 @@ public class HighScore extends Application {
         private final String name;
         private final int score;
         private final String gameType;
-        private final String boardSize; // NEW
-        private final int level;        // NEW
-        private final String mode;      // NEW
+        private final String boardSize;
+        private final int level;
+        private final String mode;
 
         public ScoreEntry(String name, int score, String gameType, String boardSize, int level, String mode) {
             this.name = name;
@@ -71,7 +71,6 @@ public class HighScore extends Application {
         typeCol.setCellValueFactory(new PropertyValueFactory<>("gameType"));
         typeCol.setStyle("-fx-alignment: CENTER;");
 
-        // NEW columns
         TableColumn<ScoreEntry, String> boardCol = new TableColumn<>("Board");
         boardCol.setCellValueFactory(new PropertyValueFactory<>("boardSize"));
         boardCol.setStyle("-fx-alignment: CENTER;");
@@ -126,7 +125,6 @@ public class HighScore extends Application {
         List<Score> scores = manager.loadScores();
 
         for (Score s : scores) {
-            // Back-compat defaults if old entries lack fields
             int bw = (s.getBoardWidth() > 0) ? s.getBoardWidth() : 10;
             int bh = (s.getBoardHeight() > 0) ? s.getBoardHeight() : 20;
             int lvl = (s.getLevel() > 0) ? s.getLevel() : 1;

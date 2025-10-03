@@ -1,4 +1,3 @@
-// src/main/java/tetris/ui/GamePane.java
 package tetris.controller;
 
 import javafx.animation.AnimationTimer;
@@ -20,10 +19,7 @@ import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
-
 import java.net.URL;
-
-import tetris.config.ConfigService;
 import tetris.config.TetrisConfig;
 import tetris.model.Board;
 import tetris.model.TetrominoType;
@@ -36,66 +32,45 @@ import tetris.model.service.Score;
 import tetris.model.service.ScoreService;
 
 public class GamePane extends BorderPane {
-    private static final int cellSize = 20;
+    private static final int cellSize = 20; // Size of each block in pixels
+    private long lastDropTime = 0L;         // Tracks last piece drop time
+    private long dropSpeed   = 1_000_000_000L; // Speed of piece falling
 
-    // --- tick/gravity ---
-    private long lastDropTime = 0L;
-    private long dropSpeed   = 1_000_000_000L;
-
-    // --- legacy flags kept for compatibility (kept in sync by states) ---
-    private boolean paused   = false;
-    private boolean gameOver = false;
-    private int score = 0;
+    private boolean paused   = false;       // Pause state
+    private boolean gameOver = false;       // Game over state
+    private int score = 0;                  // Current score
 
     private static final Color[] colourOptions = {
             Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW
     };
 
     private final java.util.Random rng = new java.util.Random();
-
-    // Config & Audio
     private final TetrisConfig config = TetrisConfig.getInstance();
     private MediaPlayer beepPlayer;
-
-    // Board/model
-    private Board board = new Board(config.getFieldWidth(),config.getFieldHeight());
-
-    private ActivePiece current;
-    private Color currentColor;
+    private Board board = new Board(config.getFieldWidth(),config.getFieldHeight()); // Main play field
+    private ActivePiece current;   // Currently falling piece
+    private Color currentColor;    // Current piece color
     private final RotationStrategy rotator = new SrsRotation();
-
-    // Timer
-    private AnimationTimer timer;
-
-    // Next preview
-    private TetrominoType nextType;
-    private Color nextColor;
-
-    // UI
+    private AnimationTimer timer;  // Main game loop
+    private TetrominoType nextType; // Next piece type
+    private Color nextColor;        // Next piece color
     private Canvas boardCanvas;
     private Canvas nextCanvas;
     private Label  scoreLabel;
-
-    // External brain
     private boolean useExternal = false;
     private INetwork net;
     private Player extPlayer;
     private boolean extControlsThisPiece = false;
-
-    // AI brain
     private boolean useAI = false;
     private AIPlayer aiPlayer;
     private boolean aiAnimating = false;
-
     private enum AiPhase { ROTATE, SHIFT, DROP }
     private AiPhase aiPhase;
     private int aiTargetX = 0;
     private int aiRotLeft = 0;
     private int aiRotateAttempts = 0;
     private int aiRotateMax = 12;
-
     private static final long BOOST_NANOS = 100_000_000L;
-
     private boolean extLateJoinAsked = false;
     private Label playerTypeLabel;
     private Label levelLabel;
@@ -103,49 +78,36 @@ public class GamePane extends BorderPane {
     private int linesCleared = 0;
     private boolean humanBoosting = false;
     private GameOverWatcher gameOverWatcher;
-
-    // ========= STATE PATTERN =========
     private GameState state;
-
     private String extHost = "localhost";
     private int    extPort = 3000;
-
-    // Health check (external server liveness)
     private java.util.concurrent.ScheduledExecutorService extHealthExec;
     private volatile boolean extServerUp = true;
     private final java.util.concurrent.atomic.AtomicBoolean extOutageAlerted =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private void startExternalHealthMonitor(String host, int port) {
-        stopExternalHealthMonitor(); // safety if already running
+        if (!useExternal) return;
+        stopExternalHealthMonitor();
         extHealthExec = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "ext-health");
             t.setDaemon(true);
             return t;
         });
-
-        // ping every 1s (tune as you like). Do NOT block FX thread.
         extHealthExec.scheduleAtFixedRate(() -> {
-            boolean ok = pingExternal(host, port, 500); // 500ms timeout
+            boolean ok = pingExternal(host, port, 500); // Check external server
             boolean wasUp = extServerUp;
             extServerUp = ok;
 
             if (!ok && wasUp) {
-                // first time we noticed it’s down
                 if (extOutageAlerted.compareAndSet(false, true)) {
                     notifyExternalIssue("External server not responding to health check.");
                 }
             } else if (ok && !wasUp) {
-                // RECOVERED: clear alert state and late-join immediately for the current piece
                 extOutageAlerted.set(false);
-
-                // Try to reconnect + request a plan for the current piece now
-                // Do not run network on FX thread:
                 try {
-                    reconnectAndLateJoin();
-                } catch (Exception ignore) {
-                    // any UI updates happen inside reconnectAndLateJoin via Platform.runLater
-                }
+                    reconnectAndLateJoin(); // Try reconnecting
+                } catch (Exception ignored) {}
             }
         }, 0, 1, java.util.concurrent.TimeUnit.SECONDS);
     }
@@ -157,8 +119,8 @@ public class GamePane extends BorderPane {
         }
     }
 
-    // Place this inside GamePane
     private void notifyExternalIssue(String message) {
+        if (!useExternal) return;
         javafx.application.Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.ERROR);
             alert.setTitle("External Server Disconnected");
@@ -173,16 +135,16 @@ public class GamePane extends BorderPane {
     private boolean pingExternal(String host, int port, int timeoutMs) {
         try (java.net.Socket s = new java.net.Socket()) {
             s.connect(new java.net.InetSocketAddress(host, port), timeoutMs);
-            return true; // handshake succeeded
+            return true;
         } catch (Exception e) {
-            return false; // refused/timeout/unreachable
+            return false;
         }
     }
 
     public interface GameOverWatcher {
         void onHighScoreDialogShown(GamePane who);
         void onHighScoreDialogClosed(GamePane who);
-        void onGameOverReached(GamePane who);   // fired when state enters GameOver
+        void onGameOverReached(GamePane who);
         void onScoreSaved(GamePane who);
     }
 
@@ -190,10 +152,6 @@ public class GamePane extends BorderPane {
         void onEnter();
         void onExit();
         void onTick(long now);
-
-        boolean isPaused();
-        boolean isGameOver();
-        boolean allowsHumanInput();
     }
 
     private void setState(GameState next) {
@@ -206,17 +164,15 @@ public class GamePane extends BorderPane {
         this.gameOverWatcher = watcher;
     }
 
+    // Running game state: handles piece dropping and AI/external moves
     private class RunningState implements GameState {
         @Override public void onEnter() {
             paused = false;
-            // reset tick pacing so we don't instant-drop after resume/start
             lastDropTime = 0L;
         }
         @Override public void onExit() {}
         @Override public void onTick(long now) {
             applyAutoBoostIfNeeded();
-
-            // opportunistic late-join external planner
             if (useExternal
                     && net != null && net.isConnected()
                     && current != null && !gameOver
@@ -229,15 +185,11 @@ public class GamePane extends BorderPane {
             if (lastDropTime == 0) {
                 lastDropTime = now;
             } else if (now - lastDropTime > dropSpeed) {
-                // micro-step brains first (external/AI)
                 if (aiAnimating) {
                     doOneAiStep();
                 }
 
-                // gravity: one row per tick
                 boolean fell = tryBoost();
-
-                // if blocked, lock + spawn next
                 if (!fell) {
                     lockPiece();
                     aiAnimating = false;
@@ -246,26 +198,20 @@ public class GamePane extends BorderPane {
                 lastDropTime = now;
             }
         }
-        @Override public boolean isPaused() { return false; }
-        @Override public boolean isGameOver() { return false; }
-        @Override public boolean allowsHumanInput() { return !gameOver; }
     }
 
+    // Paused state: freezes gameplay
     private class PausedState implements GameState {
         @Override public void onEnter() {
             paused = true;
         }
         @Override public void onExit() {
-            // no-op
         }
         @Override public void onTick(long now) {
-            // do nothing while paused; draw() still runs from timer and uses flags for overlay
         }
-        @Override public boolean isPaused() { return true; }
-        @Override public boolean isGameOver() { return false; }
-        @Override public boolean allowsHumanInput() { return false; }
     }
 
+    // Game over state: stops timer and shows score input dialog
     private class GameOverState implements GameState {
         @Override public void onEnter() {
             gameOver = true;
@@ -273,7 +219,7 @@ public class GamePane extends BorderPane {
             playSound("/sounds/game-finish.wav");
 
             if (gameOverWatcher != null) {
-                gameOverWatcher.onGameOverReached(GamePane.this);   // NEW
+                gameOverWatcher.onGameOverReached(GamePane.this);
                 gameOverWatcher.onHighScoreDialogShown(GamePane.this);
             }
 
@@ -296,7 +242,7 @@ public class GamePane extends BorderPane {
                     );
                     manager.addScore(s);
 
-                    if (gameOverWatcher != null) gameOverWatcher.onScoreSaved(GamePane.this); // NEW
+                    if (gameOverWatcher != null) gameOverWatcher.onScoreSaved(GamePane.this);
                 });
 
                 if (gameOverWatcher != null) {
@@ -306,15 +252,8 @@ public class GamePane extends BorderPane {
         }
 
         @Override public void onExit() {}
-        @Override public void onTick(long now) { /* no-op */ }
-        @Override public boolean isPaused() { return false; }
-        @Override public boolean isGameOver() { return true; }
-        @Override public boolean allowsHumanInput() { return false; }
+        @Override public void onTick(long now) {}
     }
-
-    // ========= PUBLIC API (unchanged signatures) =========
-    public boolean isGameOver() { return gameOver; }
-    public boolean isPaused()   { return paused; }
 
     public void pause() {
         if (!gameOver && !(state instanceof PausedState)) {
@@ -328,12 +267,10 @@ public class GamePane extends BorderPane {
         }
     }
 
-    /** Called when opening a menu/confirm dialog */
     public void pauseForMenu() {
         if (!gameOver) pause();
     }
 
-    /** Called when dismissing a menu/confirm dialog without exiting */
     public void resumeFromMenu() {
         if (!gameOver) resume();
     }
@@ -344,7 +281,6 @@ public class GamePane extends BorderPane {
         else setState(new PausedState());
     }
 
-    // ========= Speed helpers =========
     private long baseDropSpeed() {
         return 1_000_000_000L / Math.max(1, config.getGameLevel());
     }
@@ -361,7 +297,6 @@ public class GamePane extends BorderPane {
         }
     }
 
-    // ========= AI toggle =========
     public void enableAI(tetris.model.ai.Heuristic h) {
         useAI = true;
         aiPlayer = new AIPlayer(h);
@@ -375,15 +310,13 @@ public class GamePane extends BorderPane {
         return "Human";
     }
 
-    // ========= Start (now just resets + enters Running) =========
     public void startGame() {
         resetGameState();
         spawnNewPiece();
-        // enter Running (timer already running from ctor)
         setState(new RunningState());
     }
 
-    // ========= AI micro-steps (unchanged) =========
+    //ai will run on step at a time
     private void doOneAiStep() {
         switch (aiPhase) {
             case ROTATE -> {
@@ -432,15 +365,11 @@ public class GamePane extends BorderPane {
                 }
             }
 
-            case DROP -> {
-                // gravity handles
-            }
+            case DROP -> {}
         }
     }
 
-    // ========= UI construction + timer =========
     public GamePane() {
-        // UI
         scoreLabel = new Label();
         scoreLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
         HBox topBar = new HBox(scoreLabel);
@@ -494,22 +423,16 @@ public class GamePane extends BorderPane {
         setRight(rightBar);
         setStyle("-fx-background-color: #f9f9f9;");
 
-        // Audio
         URL soundUrl = getClass().getResource("/sounds/erase-line.wav");
         if (soundUrl != null) {
             Media beep = new Media(soundUrl.toExternalForm());
             beepPlayer = new MediaPlayer(beep);
             beepPlayer.setOnEndOfMedia(() -> beepPlayer.stop());
         }
-
-        // initial board
         resetGameState();
         spawnNewPiece();
-
-        // start in Running by default so constructor-created panes work standalone
         setState(new RunningState());
 
-        // one timer forever; state decides actions
         timer = new AnimationTimer() {
             @Override public void handle(long now) {
                 if (state != null) state.onTick(now);
@@ -519,7 +442,6 @@ public class GamePane extends BorderPane {
         timer.start();
     }
 
-    // ========= Movement / input =========
     public void tryMoveLeft()  {
         if (!gameOver && !(state instanceof PausedState) && !extControlsThisPiece) {
             if (move(-1, 0) && config.isSoundEffect()) playMoveTurn();
@@ -544,9 +466,11 @@ public class GamePane extends BorderPane {
         applyAutoBoostIfNeeded();
     }
 
+    //set a specific seed for both boards to be identical
     public void setSeed(long seed) { rng.setSeed(seed); }
 
-    public void enableExternal(String host, int port) throws Exception {
+    //external functionality
+    public void enableExternal(String host, int port) {
         useExternal = true;
         this.extHost = host;
         this.extPort = port;
@@ -591,7 +515,7 @@ public class GamePane extends BorderPane {
         }
     }
 
-    // reconnect + request a plan for the CURRENT piece
+    //Try to reconnect external server
     private void reconnectAndLateJoin() {
         if (!useExternal || gameOver || current == null || extControlsThisPiece) return;
 
@@ -605,7 +529,6 @@ public class GamePane extends BorderPane {
             extPlayer = new ExternalPlayer(net);
 
             var snap = snapshot();
-            // mark that we’ve asked to avoid spamming (if you use extLateJoinAsked)
             extLateJoinAsked = true;
 
             extPlayer.requestMoveAsync(
@@ -618,12 +541,10 @@ public class GamePane extends BorderPane {
                         extControlsThisPiece = true;
                         dropSpeed = BOOST_NANOS;
                         lastDropTime = 0L;
-                        // optional: doOneAiStep();
                     }),
                     err -> javafx.application.Platform.runLater(() -> {
-                        // Request failed right after recovery — inform once and we’ll try again next piece/recovery.
                         notifyExternalIssue("External move request failed after recovery: " + err.getMessage());
-                        extLateJoinAsked = false; // allow future attempts
+                        extLateJoinAsked = false;
                     })
             );
         } catch (Exception e) {
@@ -638,7 +559,6 @@ public class GamePane extends BorderPane {
         if (net != null) { net.disconnect(); net = null; extPlayer = null; }
     }
 
-    // ========= Game flow helpers =========
     private void resetGameState() {
         linesCleared = 0;
         if (linesLabel != null) linesLabel.setText("Lines: 0");
@@ -681,11 +601,9 @@ public class GamePane extends BorderPane {
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = color;
 
-        // Top-out check
         for (Vec c : current.worldCells()) {
             if (c.y() < 0 || c.y() >= board.height() || c.x() < 0 || c.x() >= board.width()
                     || board.cells()[c.y()][c.x()] != null) {
-                // enter GameOver state (shows dialog and stops timer)
                 setState(new GameOverState());
                 return;
             }
@@ -737,7 +655,6 @@ public class GamePane extends BorderPane {
         }
 
         if (useAI && aiPlayer != null && !requested) {
-            requested = true;
             extControlsThisPiece = true;
             var snap = snapshot();
             aiPlayer.requestMoveAsync(
@@ -787,8 +704,6 @@ public class GamePane extends BorderPane {
         spawnNewPiece();
     }
 
-
-    // ========= Movement helpers =========
     private boolean move(int dx, int dy) {
         int beforeX = currentLeft();
         current.moveBy(dx, dy);
@@ -799,7 +714,6 @@ public class GamePane extends BorderPane {
         return (dx != 0 || dy != 0) && (currentLeft() != beforeX || dy != 0);
     }
 
-    // ========= Rendering =========
     private void draw(GraphicsContext gc) {
         int W = board.width(), H = board.height();
         gc.clearRect(0, 0, W * cellSize, H * cellSize);
@@ -871,7 +785,7 @@ public class GamePane extends BorderPane {
         }
     }
 
-    // ========= DTO helpers =========
+    //capture a snapshot of current game state to send to external
     private tetris.model.dto.PureGame snapshot() {
         tetris.model.dto.PureGame p = new tetris.model.dto.PureGame();
         p.width = board.width(); p.height = board.height();
@@ -889,7 +803,7 @@ public class GamePane extends BorderPane {
         for (Vec v : cells) m[v.y()-minY][v.x()-minX]=1; return m;
     }
 
-    // ========= Rotation helper =========
+    //rotate one step at a time instead of instantly
     private boolean tryRotateWithKicks(int r) {
         if (r == 0) return true;
 
@@ -915,7 +829,6 @@ public class GamePane extends BorderPane {
         return false;
     }
 
-    // ========= Position helpers =========
     private int currentLeft() {
         int min = Integer.MAX_VALUE;
         for (Vec v : current.worldCells()) if (v.x() < min) min = v.x();
@@ -934,11 +847,6 @@ public class GamePane extends BorderPane {
         if (desiredLeft > max) return max;
         return desiredLeft;
     }
-    private int clampTargetX(int desiredX) {
-        if (desiredX < 0) return 0;
-        if (desiredX >= board.width()) return board.width() - 1;
-        return desiredX;
-    }
 
     private void playSound(String resource) {
         if (config.isSoundEffect()) {
@@ -952,12 +860,6 @@ public class GamePane extends BorderPane {
         }
     }
 
-    // ========= Legacy game-over entry point (now transitions state) =========
-    private void handleGameOver() {
-        setState(new GameOverState());
-    }
-
-    // ========= Misc =========
     private boolean isMultiplayerGame() {
         return true;
     }
@@ -986,7 +888,6 @@ public class GamePane extends BorderPane {
         );
     }
 
-    // Put these near the bottom of GamePane (anywhere inside the class)
     private TetrominoType randomType() {
         TetrominoType[] vals = TetrominoType.values();
         return vals[rng.nextInt(vals.length)];
@@ -995,5 +896,4 @@ public class GamePane extends BorderPane {
     private Color randomColor() {
         return colourOptions[rng.nextInt(colourOptions.length)];
     }
-
 }

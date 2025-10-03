@@ -21,7 +21,6 @@ public class ExternalBotServer {
             Random rnd = new Random();
             String line;
             while ((line = in.readLine()) != null) {
-                // Parse width crudely to keep dependencies out:
                 int width = 10;
                 int idx = line.indexOf("\"width\"");
                 if (idx >= 0) {

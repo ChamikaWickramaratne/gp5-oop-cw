@@ -1,4 +1,3 @@
-// src/main/java/tetris/controller/GameplayController.java
 package tetris.controller;
 
 import javafx.animation.AnimationTimer;
@@ -15,126 +14,78 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
-
 import tetris.config.ConfigService;
-import tetris.config.PlayerType;
+import tetris.model.PlayerType;
 import tetris.config.TetrisConfig;
-
 import tetris.model.Board;
 import tetris.model.Vec;
 import tetris.model.TetrominoType;
 import tetris.model.piece.ActivePiece;
 import tetris.model.rules.RotationStrategy;
 import tetris.model.rules.SrsRotation;
-
 import tetris.model.service.HighScoreManager;
 import tetris.model.service.ScoreObserver;
 import tetris.model.service.ScoreService;
 import tetris.model.service.Score;
-
 import tetris.view.SinglePlayerView;
 import tetris.view.HighScore;
 import tetris.view.MainMenu;
-
-// Brains & networking (as per your packages)
-
-// State pattern
-
 import java.net.URL;
 import java.util.Random;
 
 public class GameplayController {
-
-    // ======== Config ========
     private final TetrisConfig config = TetrisConfig.getInstance();
-
-    // ======== Visual constants (from view) ========
     private static final int cellSize = SinglePlayerView.CELL_SIZE;
-
-    // ======== Game ticking ========
     private long lastDropTime = 0L;
     private long dropSpeed;
     private int score = 0;
-
-    // ======== Audio ========
     private MediaPlayer musicPlayer;
     private MediaPlayer beepPlayer;
-
-    // ======== Colors ========
     private static final Color[] colourOptions = {
             Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW
     };
-
-    // ======== Core model ========
     private final Random rng = new Random();
-    private Board board;                     // created with config sizes
-    private ActivePiece current;             // active falling piece
-    private Color currentColor;              // colour for the active piece
+    private Board board;
+    private ActivePiece current;
+    private Color currentColor;
     private final RotationStrategy rotator = new SrsRotation();
-
-    // UI (via view)
     private SinglePlayerView view;
     private AnimationTimer timer;
     private TetrominoType nextType;
     private Color nextColor;
     private int linesCleared = 0;
-
-    // ======== External brain (network) ========
-    // ======== External brain (network) ========
     private boolean useExternal = false;
     private INetwork net;
     private Player extPlayer;
     private boolean extControlsThisPiece = false;
-
-    // >>> external host/port remembered for health & reconnect
     private String extHost = "localhost";
     private int    extPort = 3000;
-
-    // >>> health check state
     private java.util.concurrent.ScheduledExecutorService extHealthExec;
     private volatile boolean extServerUp = true;
     private final java.util.concurrent.atomic.AtomicBoolean extOutageAlerted =
             new java.util.concurrent.atomic.AtomicBoolean(false);
-
-    // >>> avoid duplicate late-join requests during a piece
     private boolean extLateJoinAsked = false;
-
-    // ======== AI brain ========
     private boolean useAI = false;
     private AIPlayer aiPlayer;
     private boolean aiAnimating = false;
-
     private enum AiPhase { ROTATE, SHIFT }
     private AiPhase aiPhase;
-    private int aiTargetX = 0;          // LEFTMOST column target
+    private int aiTargetX = 0;
     private int aiRotLeft = 0;
     private int aiRotateAttempts = 0;
     private int aiRotateMax = 12;
-
-    // ======== External micro-steps ========
     private boolean extAnimating = false;
-
     private enum ExtPhase { ROTATE, SHIFT }
     private ExtPhase extPhase;
-
-    private int extTargetX = 0;          // LEFTMOST column target (same semantics as AI)
+    private int extTargetX = 0;
     private int extRotLeft = 0;
     private int extRotateAttempts = 0;
     private int extRotateMax = 12;
-
-    // Gravity helpers
     private static final long BOOST_NANOS = 100_000_000L;
     private boolean humanBoosting = false;
-
-    // ======== Score observer (for Observer pattern) ========
     private final ScoreObserver scoreObserver = newScore ->
             Platform.runLater(() -> { if (view != null) view.setScore(newScore); });
-
-
-    // Stage
     private Stage stage;
-
-    // ======== State pattern ========
     private GameState state;
 
     private void setState(GameState next) {
@@ -142,12 +93,12 @@ public class GameplayController {
         state = next;
         state.onEnter();
     }
+
     private boolean humanInputEnabled() {
         return state != null && state.allowsHumanInput()
                 && !useAI && !useExternal && !extControlsThisPiece;
     }
 
-    // >>> Simple TCP connect ping (non-blocking UI; call from executor)
     private boolean pingExternal(String host, int port, int timeoutMs) {
         try (java.net.Socket s = new java.net.Socket()) {
             s.connect(new java.net.InetSocketAddress(host, port), timeoutMs);
@@ -157,8 +108,8 @@ public class GameplayController {
         }
     }
 
-    // >>> UI-safe error alert (debounced by extOutageAlerted)
     private void notifyExternalIssue(String message) {
+        if (!useExternal) return;
         Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.ERROR);
             alert.initOwner(stage);
@@ -170,9 +121,8 @@ public class GameplayController {
         });
     }
 
-    // >>> Start periodic health monitor (call when enabling External)
     private void startExternalHealthMonitor(String host, int port) {
-        stopExternalHealthMonitor(); // safety
+        stopExternalHealthMonitor();
         extHealthExec = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "ext-health");
             t.setDaemon(true);
@@ -189,15 +139,12 @@ public class GameplayController {
                     notifyExternalIssue("External server not responding (timeout/refused).");
                 }
             } else if (ok && !wasUp) {
-                // RECOVERED → try immediate reconnect + late-join
                 extOutageAlerted.set(false);
-                // Do not block this thread with UI; just attempt reconnect
                 reconnectAndLateJoin();
             }
         }, 0, 1, java.util.concurrent.TimeUnit.SECONDS);
     }
 
-    // >>> Stop monitor (call when leaving screen / stopping game)
     private void stopExternalHealthMonitor() {
         if (extHealthExec != null) {
             extHealthExec.shutdownNow();
@@ -205,13 +152,10 @@ public class GameplayController {
         }
     }
 
-    // >>> Reconnect & request a plan for the CURRENT piece (late-join)
     private void reconnectAndLateJoin() {
-        // don't spam / don't fight existing plan
         if (!useExternal || state == null || state.isGameOver()
                 || current == null || extControlsThisPiece || extAnimating) return;
 
-        // If you sometimes disconnect between pieces, it's fine—we connect fresh here
         try {
             net = new ExternalPlayerClient(extHost, extPort);
             net.connect();
@@ -222,12 +166,11 @@ public class GameplayController {
             extPlayer = new ExternalPlayer(net);
 
             var snap = snapshot();
-            extLateJoinAsked = true; // avoid duplicate late-join in your tick
+            extLateJoinAsked = true;
 
             extPlayer.requestMoveAsync(
                     snap,
                     mv -> {
-                        // Back onto FX thread for state mutations
                         Platform.runLater(() -> {
                             extRotLeft = (mv.opRotate & 3);
                             extTargetX = mv.opX;
@@ -240,7 +183,6 @@ public class GameplayController {
                     },
                     err -> {
                         Platform.runLater(() -> {
-                            // Request failed immediately after recovery; allow future attempts
                             notifyExternalIssue("External move request failed after recovery: " + err.getMessage());
                             extLateJoinAsked = false;
                         });
@@ -252,15 +194,10 @@ public class GameplayController {
         }
     }
 
-    // ======== Public wiring ========
     public void start(Stage stage) {
         this.stage = stage;
-
-        // Create board with config size
         board = new Board(config.getFieldWidth(), config.getFieldHeight());
         dropSpeed = baseDropSpeed();
-
-        // View
         view = new SinglePlayerView(board.width(), board.height());
         view.setPlayerTypeText(currentPlayerType());
         view.setLevel(config.getGameLevel());
@@ -269,22 +206,14 @@ public class GameplayController {
         int sceneWidth  = board.width()  * cellSize + 40;
         int sceneHeight = board.height() * cellSize + 120;
         view.attachTo(stage, "Tetris", sceneWidth, sceneHeight);
-
-        // Let PlayerFactory decide AI/External based on config
         PlayerFactory.configureForType(this, config.getPlayer1Type(), "localhost", 3000);
-
-        // Controls
         stage.getScene().setOnKeyPressed(e -> {
             switch (e.getCode()) {
-                // Human-only movement
                 case A -> { if (humanInputEnabled()) { tryMoveLeft();  playSound("/sounds/move-turn.wav"); } }
                 case D -> { if (humanInputEnabled()) { tryMoveRight(); playSound("/sounds/move-turn.wav"); } }
                 case W, UP -> { if (humanInputEnabled()) { tryRotate(); playSound("/sounds/move-turn.wav"); } }
-
-                // Boost: human can toggle; AI ignores (always boosted below)
                 case S -> { if (state != null && state.allowsHumanInput()) boost(true); }
 
-                // Global controls
                 case P -> togglePause();
                 case M -> toggleMusic();
                 case N -> toggleSound();
@@ -297,7 +226,6 @@ public class GameplayController {
             }
         });
 
-        // Back button
         view.getBackButton().setOnAction(e -> {
             if (state instanceof GameOverState) {
                 stopTimer();
@@ -329,7 +257,6 @@ public class GameplayController {
             }
         });
 
-        // Background Music
         if (config.isMusic()) {
             URL musicUrl = getClass().getResource("/sounds/background.mp3");
             if (musicUrl != null) {
@@ -340,7 +267,6 @@ public class GameplayController {
             }
         }
 
-        // Beep SFX
         URL soundUrl = getClass().getResource("/sounds/erase-line.wav");
         if (soundUrl != null) {
             Media beep = new Media(soundUrl.toExternalForm());
@@ -352,10 +278,7 @@ public class GameplayController {
         resetGameState();
         spawnNewPiece();
 
-        // Start in Running state
         setState(new RunningState(this));
-
-        // Tick loop — delegates to current state
         timer = new AnimationTimer() {
             @Override public void handle(long now) {
                 if (state != null) state.onTick(now);
@@ -365,7 +288,6 @@ public class GameplayController {
         timer.start();
     }
 
-    // ======== Public hooks kept from original ========
     public void enableAI(tetris.model.ai.Heuristic h) {
         useAI = true;
         aiPlayer = new AIPlayer(h);
@@ -389,9 +311,6 @@ public class GameplayController {
         startExternalHealthMonitor(host, port);
     }
 
-    public void setSeed(long seed) { rng.setSeed(seed); }
-
-    // ======== Helpers used by states/tick ========
     long getLastDropTime() { return lastDropTime; }
     void setLastDropTime(long v) { lastDropTime = v; }
     long getDropSpeedNanos() { return dropSpeed; }
@@ -403,15 +322,12 @@ public class GameplayController {
     }
 
     void stepBrainsOnce() {
-        // External reconnect opportunistically
         if (useExternal && (net == null || !net.isConnected()) && !extControlsThisPiece && !extAnimating && !extLateJoinAsked) {
             tryReconnectAndRequestExternal();
         }
-        // 1) External micro-step
         if (extAnimating) {
             doOneExternalStep();
         } else if (aiAnimating) {
-            // 2) AI micro-step (only if external isn't animating)
             doOneAiStep();
         }
     }
@@ -434,7 +350,6 @@ public class GameplayController {
         }
     }
 
-    // ======== Original helpers (all retained) ========
     private long baseDropSpeed() {
         return 1_000_000_000L / Math.max(1, config.getGameLevel());
     }
@@ -457,18 +372,6 @@ public class GameplayController {
         return "Human";
     }
 
-    private void showErrorAlert(String title, String header, String details) {
-        Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.ERROR);
-            alert.initOwner(stage);
-            alert.setTitle(title);
-            alert.setHeaderText(header);
-            alert.setContentText(details);
-            alert.showAndWait();
-        });
-    }
-
-    // ======== Bot micro-steps (present & unchanged semantics) ========
     private void doOneExternalStep() {
         switch (extPhase) {
             case ROTATE -> {
@@ -482,10 +385,9 @@ public class GameplayController {
                         int target = clampTargetLeft(extTargetX);
                         if (left != target) {
                             int dir = (target > left) ? +1 : -1;
-                            move(dir, 0); // safe; reverts if blocked
+                            move(dir, 0);
                         }
                         if (++extRotateAttempts >= extRotateMax) {
-                            // give up rotating; proceed to SHIFT
                             extRotLeft = 0;
                         }
                     }
@@ -494,10 +396,8 @@ public class GameplayController {
                         extPhase = ExtPhase.SHIFT;
                         extRotateAttempts = 0;
                     }
-                    return; // stay in ROTATE for this tick
+                    return;
                 }
-
-                // nothing left to rotate → go to SHIFT
                 extPhase = ExtPhase.SHIFT;
             }
 
@@ -506,7 +406,6 @@ public class GameplayController {
                 int target = clampTargetLeft(extTargetX);
 
                 if (left == target) {
-                    // finished external plan; let gravity continue
                     extAnimating = false;
                     return;
                 }
@@ -516,7 +415,6 @@ public class GameplayController {
 
                 int afterLeft = currentLeft();
                 if (afterLeft == before) {
-                    // blocked horizontally; stop trying — gravity will drop and we’ll lock later
                     extAnimating = false;
                 }
             }
@@ -571,7 +469,6 @@ public class GameplayController {
         }
     }
 
-    // ======== Movement (unchanged API) ========
     private void tryMoveLeft()  { if (state.allowsHumanInput() && !extControlsThisPiece) move(-1, 0); }
     private void tryMoveRight() { if (state.allowsHumanInput() && !extControlsThisPiece) move(+1, 0); }
     private void tryRotate()    { if (state.allowsHumanInput() && !extControlsThisPiece) rotator.tryRotateCW(current, board); }
@@ -587,11 +484,9 @@ public class GameplayController {
         applyAutoBoostIfNeeded();
     }
 
-    // ======== Pause via state ========
     private void togglePause() {
         if (state instanceof PausedState) setState(new RunningState(this));
         else if (state instanceof RunningState) setState(new PausedState(this));
-        // ignore in GameOverState
     }
 
     private void resetGameState() {
@@ -602,24 +497,13 @@ public class GameplayController {
         dropSpeed = baseDropSpeed();
         view.setScore(0);
         view.setLines(0);
-
-        // 🟢 Let observers (UI, etc.) know we’re back to zero
         ScoreService.notifyScoreChanged(0);
-
         nextType  = randomType();
         nextColor = randomColor();
         humanBoosting = false;
-
         Canvas boardCanvas = view.getBoardCanvas();
         boardCanvas.setWidth(board.width() * cellSize);
         boardCanvas.setHeight(board.height() * cellSize);
-    }
-
-
-    private void restartGame() {
-        resetGameState();
-        spawnNewPiece();
-        setState(new RunningState(this));
     }
 
     private void spawnNewPiece() {
@@ -628,14 +512,11 @@ public class GameplayController {
         nextType  = randomType();
         nextColor = randomColor();
 
-        // reset per-piece animation/rotation trackers
         extAnimating = false;
         aiAnimating  = false;
         extRotateAttempts = 0;
         aiRotateAttempts  = 0;
         boolean requested = false;
-
-        // center spawn
         Vec[] base = type.offsets();
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
         for (Vec v : base) { if (v.x() < minX) minX = v.x(); if (v.x() > maxX) maxX = v.x(); }
@@ -644,8 +525,6 @@ public class GameplayController {
 
         current = new ActivePiece(type, new Vec(startCol, 0));
         currentColor = color;
-
-        // top-out check
         for (Vec c : current.worldCells()) {
             if (c.y() < 0 || c.y() >= board.height() || c.x() < 0 || c.x() >= board.width()
                     || board.cells()[c.y()][c.x()] != null) {
@@ -654,15 +533,12 @@ public class GameplayController {
             }
         }
 
-        // ========== External planner (per-piece connect, non-fatal on failure) ==========
         if (useExternal) {
             try {
-                // close any prior short-lived connection for previous piece
                 if (net != null) {
                     try { net.disconnect(); } catch (Exception ignore) {}
                 }
 
-                // extHost/extPort should be fields set in enableExternal(...)
                 net = new ExternalPlayerClient(extHost, extPort);
                 net.connect();
 
@@ -672,12 +548,11 @@ public class GameplayController {
                     final var snap = snapshot();
                     requested = true;
                     extControlsThisPiece = true;
-                    extLateJoinAsked = true; // avoid duplicate late-join attempts this piece
+                    extLateJoinAsked = true;
 
                     extPlayer.requestMoveAsync(
                             snap,
                             mv -> {
-                                // back on FX thread for state changes
                                 Platform.runLater(() -> {
                                     extRotLeft = (mv.opRotate & 3);
                                     extTargetX = mv.opX;
@@ -685,25 +560,20 @@ public class GameplayController {
                                     extAnimating = true;
                                     applyAutoBoostIfNeeded();
                                     extControlsThisPiece = true;
-                                    lastDropTime = 0L; // ensure immediate tick pacing
+                                    lastDropTime = 0L;
                                 });
                             },
                             err -> {
-                                // keep external mode; just report and allow future attempts
                                 Platform.runLater(() -> {
                                     notifyExternalIssue("External move request failed: " + err.getMessage());
                                     extAnimating = false;
                                     extControlsThisPiece = false;
-                                    extLateJoinAsked = false; // allow retry on recovery/next piece
+                                    extLateJoinAsked = false;
                                 });
                             }
                     );
                 } else {
-                    // not connected right now — show once; allow health monitor to retry
-//                    notifyExternalIssue("Could not connect to external server at "
-//                            + extHost + ":" + extPort + ".");
                     extPlayer = null;
-                    // keep net object as is or null — no control for this piece
                     extControlsThisPiece = false;
                     extLateJoinAsked = false;
                 }
@@ -712,15 +582,12 @@ public class GameplayController {
                         + e.getClass().getSimpleName()
                         + (e.getMessage() != null ? (": " + e.getMessage()) : ""));
                 extPlayer = null;
-                // keep External mode enabled; no control for this piece
                 extControlsThisPiece = false;
                 extLateJoinAsked = false;
             }
         }
 
-        // ========== AI planner (only if external didn't take this piece) ==========
         if (useAI && aiPlayer != null && !requested) {
-            requested = true;
             extControlsThisPiece = true;
             final var snap = snapshot();
             aiPlayer.requestMoveAsync(
@@ -785,12 +652,11 @@ public class GameplayController {
         int cleared = board.clearLines();
         score += ScoreService.pointsFor(cleared);
 
-        // 🟢 Notify all observers
         ScoreService.notifyScoreChanged(score);
 
         linesCleared += cleared;
         view.setLines(linesCleared);
-        view.setScore(score); // harmless duplicate to keep existing behavior
+        view.setScore(score);
 
         if (cleared > 0 && config.isSoundEffect() && beepPlayer != null) {
             beepPlayer.stop();
@@ -835,7 +701,6 @@ public class GameplayController {
             gc.strokeRect(px, py, cellSize, cellSize);
         }
 
-        // Overlay via state
         if (state != null && (state.isPaused() || state.isGameOver())) {
             double w = W * cellSize, h = H * cellSize;
             gc.save();
@@ -936,28 +801,6 @@ public class GameplayController {
         return m;
     }
 
-    private void applyExternalMove(tetris.model.dto.OpMove mv) {
-        final int r = (mv.opRotate & 3);
-
-        boolean rotated = tryRotateWithKicks(r);
-
-        int target = clampTargetLeft(mv.opX);
-        int guard = 0;
-        while (currentLeft() != target && guard++ < (board.width() * 2)) {
-            int left = currentLeft();
-            int dir = (target > left) ? +1 : -1;
-            int before = left;
-            move(dir, 0);
-            if (currentLeft() == before) break;
-            if (!rotated) rotated = tryRotateWithKicks(r);
-        }
-
-        while (tryBoost()) { /* fall until blocked */ }
-
-        lockPieceAndSpawn();
-    }
-
-    /** Try CW rotate 'r' times; on failure, attempt tiny horizontal nudges then retry. */
     private boolean tryRotateWithKicks(int r) {
         if (r == 0) return true;
 
@@ -988,11 +831,13 @@ public class GameplayController {
         for (Vec v : current.worldCells()) if (v.x() < min) min = v.x();
         return min;
     }
+
     private int currentRight() {
         int max = Integer.MIN_VALUE;
         for (Vec v : current.worldCells()) if (v.x() > max) max = v.x();
         return max;
     }
+
     private int clampTargetLeft(int desiredLeft) {
         int pieceWidth = currentRight() - currentLeft() + 1;
         int min = 0;
@@ -1047,12 +892,6 @@ public class GameplayController {
         }
     }
 
-    // === State-driven game over ===
-    private void handleGameOver() {
-        setState(new GameOverState(this));
-    }
-
-    // Called by GameOverState.onEnter()
     public void onGameOverDialog() {
         playSound("/sounds/game-finish.wav");
 
