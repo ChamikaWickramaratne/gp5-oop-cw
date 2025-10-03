@@ -96,8 +96,8 @@ class GameTests {
     public void testAddScoreSortsDescending() {
         HighScoreManager manager = new HighScoreManager();
         manager.clear();
-        manager.addScore(new Score("Alice", 500, "Human"));
-        manager.addScore(new Score("Bob", 1000, "Human"));
+        manager.addScore(new Score("Alice", 500, "Human",15,30,1,"SinglePlayer"));
+        manager.addScore(new Score("Bob", 1000, "Human",15,30,1,"SinglePlayer"));
 
         List<Score> scores = manager.loadScores();
         assertEquals("Bob", scores.get(0).playerName); // highest first
